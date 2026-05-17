@@ -46,10 +46,12 @@ PIPE_PATH = "/tmp/homeassistant.pipe"
 # Model initialisation (module level — loaded once at startup)
 # ---------------------------------------------------------------------------
 
-oww_model = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
+_OWW_MODEL_DIR = os.path.join(os.path.dirname(__import__("openwakeword").__file__), "resources/models")
+_OWW_MODEL_KEY = "hey_jarvis_v0.1"
+oww_model = Model(wakeword_model_paths=[os.path.join(_OWW_MODEL_DIR, f"{_OWW_MODEL_KEY}.onnx")])
 
 vad_model, utils = torch.hub.load(
-    'snakers4/silero-vad', 'silero_vad', force_reload=False
+    'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
 )
 (get_speech_timestamps, _, read_audio, *_) = utils
 
@@ -161,7 +163,7 @@ def main():
             chunk_np = chunk.flatten().astype('float32') / 32768.0
 
             oww_model.predict(chunk_np)
-            scores = oww_model.prediction_buffer.get("hey_jarvis", [0])
+            scores = oww_model.prediction_buffer.get(_OWW_MODEL_KEY, [0])
             if max(scores[-1:], default=0) > 0.5:
                 print("Wake word detected! Recording...")
                 audio_buffer = record_until_silence(stream)
