@@ -39,7 +39,7 @@ SILENCE_COMMAND_SECONDS = 1.0
 
 PIPE_PATH     = "/tmp/homeassistant.pipe"
 OWW_MODEL     = "hey_jarvis"
-OWW_THRESHOLD = 0.5
+OWW_THRESHOLD = 0.75
 MPV_SOCKET    = "/tmp/ha-mpv.sock"
 DUCK_VOLUME   = 5
 
@@ -54,7 +54,7 @@ vad_model, _ = torch.hub.load(
 oww = WakeModel(wakeword_models=[OWW_MODEL])
 
 whisper = WhisperModel(
-    "Systran/faster-distil-whisper-small.en",
+    "small.en",
     device="cpu",
     compute_type="int8",
     cpu_threads=4,
