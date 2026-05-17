@@ -56,7 +56,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "FATAL: could not resolve routes path: %v\n", err)
 		os.Exit(1)
 	}
-	if err := config.EnsureRoutesFile(routesPath, config.DefaultRoutes()); err != nil {
+	if err := config.EnsureRoutesFile(routesPath); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: could not ensure routes file: %v\n", err)
 		os.Exit(1)
 	}

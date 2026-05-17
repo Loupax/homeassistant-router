@@ -3,10 +3,14 @@ package config
 import (
 	"bufio"
 	"encoding/json"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
 )
+
+//go:embed routes.default.jsonl
+var defaultRoutesData []byte
 
 type RouteEntry struct {
 	Pattern string `json:"pattern"`
@@ -36,58 +40,20 @@ func LoadRoutes(path string) ([]RouteEntry, error) {
 		}
 		entries = append(entries, entry)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return entries, nil
+	return entries, scanner.Err()
 }
 
-func DefaultRoutes() []RouteEntry {
-	return []RouteEntry{
-		{Pattern: "stop", Intent: "stop"},
-		{Pattern: "stop playing", Intent: "stop"},
-		{Pattern: "stop music", Intent: "stop"},
-		{Pattern: "louder", Intent: "volume_up"},
-		{Pattern: "volume up", Intent: "volume_up"},
-		{Pattern: "quieter", Intent: "volume_down"},
-		{Pattern: "quiet", Intent: "volume_down"},
-		{Pattern: "volume down", Intent: "volume_down"},
-		{Pattern: "lower", Intent: "volume_down"},
-		{Pattern: "pause", Intent: "pause"},
-		{Pattern: "resume", Intent: "resume"},
-		{Pattern: "continue", Intent: "resume"},
-		{Pattern: "unpause", Intent: "resume"},
-	}
-}
-
-func EnsureRoutesFile(path string, defaults []RouteEntry) error {
-	_, err := os.Stat(path)
-	if err == nil {
-		// File exists — do nothing.
+func EnsureRoutesFile(path string) error {
+	if _, err := os.Stat(path); err == nil {
 		return nil
-	}
-	if !os.IsNotExist(err) {
+	} else if !os.IsNotExist(err) {
 		return err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	enc := json.NewEncoder(f)
-	enc.SetEscapeHTML(false)
-	for _, entry := range defaults {
-		if err := enc.Encode(entry); err != nil {
-			return err
-		}
-	}
-	return nil
+	return os.WriteFile(path, defaultRoutesData, 0644)
 }
 
 func RoutesFilePath() (string, error) {
