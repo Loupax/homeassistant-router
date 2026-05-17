@@ -51,6 +51,21 @@ func main() {
 		model = "claude-sonnet-4-6"
 	}
 
+	routesPath, err := config.RoutesFilePath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: could not resolve routes path: %v\n", err)
+		os.Exit(1)
+	}
+	if err := config.EnsureRoutesFile(routesPath, config.DefaultRoutes()); err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: could not ensure routes file: %v\n", err)
+		os.Exit(1)
+	}
+	routes, err := config.LoadRoutes(routesPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: could not load routes: %v\n", err)
+		os.Exit(1)
+	}
+
 	dc, err := discussion.LoadOrInit(statePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: could not load state: %v\n", err)
@@ -64,6 +79,10 @@ func main() {
 		Media:        &media.MediaManager{},
 		Discussion:   dc,
 		ShutdownChan: make(chan struct{}),
+		Routes:       routes,
+		LLMEndpoint:  llmURL,
+		APIKey:       apiKey,
+		Model:        model,
 	}
 
 	sigCh := make(chan os.Signal, 1)

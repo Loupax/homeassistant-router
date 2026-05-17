@@ -2,8 +2,10 @@ package router
 
 import (
 	"fmt"
+	"homeassistant/config"
 	"homeassistant/discussion"
 	"homeassistant/media"
+	"os"
 	"strings"
 )
 
@@ -11,46 +13,71 @@ type AppContext struct {
 	Media        *media.MediaManager
 	Discussion   *discussion.DiscussionContext
 	ShutdownChan chan struct{}
+	Routes       []config.RouteEntry
+	LLMEndpoint  string
+	APIKey       string
+	Model        string
+}
+
+func dispatch(appCtx *AppContext, intent, payload string) {
+	switch intent {
+	case "play":
+		appCtx.Media.PlayQuery(payload)
+	case "stop":
+		appCtx.Media.Stop()
+	case "volume_up":
+		appCtx.Media.Volume(10)
+	case "volume_down":
+		appCtx.Media.Volume(-10)
+	case "pause":
+		appCtx.Media.Pause()
+	case "resume":
+		appCtx.Media.Resume()
+	default:
+		fmt.Fprintf(os.Stderr, "router: unknown intent %q\n", intent)
+	}
 }
 
 func Route(appCtx *AppContext, line string) {
 	lower := strings.TrimSpace(strings.ToLower(line))
 
-	switch lower {
-	case "exit", "quit":
+	// exit/quit — hardcoded, not in routes file, not in classifier
+	if lower == "exit" || lower == "quit" {
 		close(appCtx.ShutdownChan)
 		return
-	case "stop", "stop playing", "stop music":
-		appCtx.Media.Stop()
-		return
-	case "louder", "volume up":
-		appCtx.Media.Volume(10)
-		return
-	case "quieter", "quiet", "volume down", "lower":
-		appCtx.Media.Volume(-10)
-		return
-	case "pause":
-		appCtx.Media.Pause()
-		return
-	case "resume", "continue", "unpause":
-		appCtx.Media.Resume()
-		return
 	}
 
-	if strings.HasPrefix(lower, "play ") || strings.HasPrefix(lower, "search ") {
-		var payload string
-		if strings.HasPrefix(lower, "play ") {
-			payload = strings.TrimSpace(line[len("play "):])
-		} else {
-			payload = strings.TrimSpace(line[len("search "):])
-		}
-		if payload == "" {
-			fmt.Println("Warning: empty payload for media command")
+	// Fast path — exact match from routes file (case-insensitive)
+	for _, entry := range appCtx.Routes {
+		if lower == strings.ToLower(entry.Pattern) {
+			dispatch(appCtx, entry.Intent, "")
 			return
 		}
-		appCtx.Media.PlayQuery(payload)
+	}
+
+	// Fast path — hardcoded prefix for play/search (need payload extraction)
+	if strings.HasPrefix(lower, "play ") {
+		payload := strings.TrimSpace(line[5:])
+		if payload != "" {
+			appCtx.Media.PlayQuery(payload)
+			return
+		}
+	}
+	if strings.HasPrefix(lower, "search ") {
+		payload := strings.TrimSpace(line[7:])
+		if payload != "" {
+			appCtx.Media.PlayQuery(payload)
+			return
+		}
+	}
+
+	// Slow path — LLM classifier
+	classification, err := Classify(line, appCtx.LLMEndpoint, appCtx.APIKey, appCtx.Model)
+	if err == nil && classification.Intent != "discuss" {
+		dispatch(appCtx, classification.Intent, classification.Payload)
 		return
 	}
 
+	// Final fallback — discussion
 	appCtx.Discussion.Submit(line)
 }
