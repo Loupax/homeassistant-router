@@ -20,4 +20,4 @@ echo "Downloading openWakeWord models..."
 
 echo ""
 echo "Venv ready. Run with:"
-echo "  .venv311/bin/python listener.py"
+echo "  .venv311/bin/python listener"

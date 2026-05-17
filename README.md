@@ -59,7 +59,7 @@ Requires the Python listener service.
 
 ```bash
 make setup-listener                           # creates .venv and installs deps
-.venv/bin/python listener.py --list-devices   # find your USB mic index
+.venv/bin/python listener --list-devices   # find your USB mic index
 ```
 
 ### Running
@@ -69,7 +69,7 @@ make setup-listener                           # creates .venv and installs deps
 ./homeassistant --input-pipe /tmp/homeassistant.pipe
 
 # Terminal 2 — voice listener
-.venv/bin/python listener.py --device <index> --pipe /tmp/homeassistant.pipe
+.venv/bin/python listener --device <index> --pipe /tmp/homeassistant.pipe
 ```
 
 Say **"Hey Jarvis"**, then speak your command. The transcript is routed automatically.

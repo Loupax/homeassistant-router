@@ -5,6 +5,27 @@ Last updated: 2026-05-17
 
 ## Backlog
 
+### Spike: Evaluate Deepgram API as replacement for local Whisper transcription
+
+Context: local Whisper (small.en, CPU) takes ~4s per command on a 2018 Ryzen 5
+mobile APU. Deepgram Nova-2 costs ~$0.0043/min (~$0.50/month estimated for
+personal use) and advertises ~300ms latency. Privacy trade-off: voice commands
+leave the local machine and pass through Deepgram servers.
+
+- [ ] Create a throwaway branch and swap the Whisper transcribe() call for a
+      Deepgram REST API call (nova-2 model, pre-recorded audio endpoint); keep
+      the existing interface so nothing else in the pipeline changes.
+
+- [ ] Benchmark end-to-end latency over 20+ real commands; record p50/p95 in a
+      short note alongside the branch.
+
+- [ ] Assess transcription accuracy against the local Whisper baseline on the
+      same command set, noting any mis-recognitions with the Greek accent.
+
+- [ ] Write up a brief trade-off summary (latency, cost, accuracy, privacy) and
+      decide: adopt Deepgram, stay on local Whisper, or explore a hybrid
+      (Deepgram for speed-sensitive commands, Whisper for sensitive ones).
+
 ### Feature: Custom openWakeWord models for direct command dispatch
 
 Goal: Train dedicated wake word models for fixed commands (stop, pause, volume
