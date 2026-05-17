@@ -53,13 +53,13 @@ Natural language is also supported for media commands (e.g. "put on some jazz", 
 
 ## Voice mode
 
-Requires the Python listener service.
+Requires the Python listener service (Python 3.11 venv — openWakeWord is not compatible with Python 3.14+).
 
 ### One-time setup
 
 ```bash
-make setup-listener                           # creates .venv and installs deps
-.venv/bin/python listener --list-devices   # find your USB mic index
+make setup-listener                                 # creates .venv311 and installs deps
+.venv311/bin/python listener --list-devices        # find your mic index or name
 ```
 
 ### Running
@@ -69,10 +69,58 @@ make setup-listener                           # creates .venv and installs deps
 ./homeassistant --input-pipe /tmp/homeassistant.pipe
 
 # Terminal 2 — voice listener
-.venv/bin/python listener --device <index> --pipe /tmp/homeassistant.pipe
+.venv311/bin/python listener --device <index or name> --pipe /tmp/homeassistant.pipe
 ```
 
 Say **"Hey Jarvis"**, then speak your command. The transcript is routed automatically.
+
+### Echo cancellation (recommended)
+
+Without echo cancellation, the mic picks up audio played by mpv and can trigger false wake-word detections. PipeWire's WebRTC AEC module prevents this.
+
+**1. Install the PipeWire WebRTC AEC library:**
+
+```bash
+sudo pacman -S pipewire-audio  # already installed on most systems
+# The webrtc AEC backend lives in:
+#   /usr/lib/spa-0.2/aec/libspa-aec-webrtc.so
+# (provided by pipewire)
+```
+
+**2. Create the PipeWire config:**
+
+```bash
+mkdir -p ~/.config/pipewire/pipewire.conf.d
+```
+
+`~/.config/pipewire/pipewire.conf.d/echo-cancel.conf`:
+
+```
+context.modules = [
+  { name = libpipewire-module-echo-cancel
+    args = {
+      library.name = aec/libspa-aec-webrtc
+      source.props = { node.name = "Echo-Cancel Source" }
+      sink.props   = { node.name = "Echo-Cancel Sink"   }
+    }
+  }
+]
+```
+
+**3. Restart PipeWire:**
+
+```bash
+systemctl --user restart pipewire pipewire-pulse
+```
+
+**4. Verify and use:**
+
+```bash
+.venv311/bin/python listener --list-devices   # "Echo-Cancel Source" should appear
+.venv311/bin/python listener --device "Echo-Cancel Source" --pipe /tmp/homeassistant.pipe
+```
+
+The systemd service (`homeassistant-listener.service`) is pre-configured to use `Echo-Cancel Source` automatically.
 
 ## Running as systemd user services
 

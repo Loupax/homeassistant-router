@@ -204,8 +204,13 @@ def write_to_pipe(pipe_fd, text, pipe_path):
 
 def main():
     parser = argparse.ArgumentParser(description="Voice listener for Home Assistant Router")
-    parser.add_argument("--device", type=int, default=None,
-                        help="sounddevice input device index (default: system default)")
+    def device_arg(v):
+        try:
+            return int(v)
+        except ValueError:
+            return v
+    parser.add_argument("--device", type=device_arg, default=None,
+                        help="sounddevice input device index or name (default: system default)")
     parser.add_argument("--pipe", default=PIPE_PATH,
                         help=f"FIFO path (default: {PIPE_PATH})")
     parser.add_argument("--list-devices", action="store_true",
