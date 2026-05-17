@@ -126,6 +126,12 @@ def load_hotwords():
     except FileNotFoundError:
         return []
 
+def hotwords_mtime():
+    try:
+        return os.path.getmtime(_HOTWORDS_FILE)
+    except FileNotFoundError:
+        return 0
+
 def transcribe(audio_np, hotwords):
     segments, _ = whisper.transcribe(
         audio_np,
@@ -212,10 +218,11 @@ def main():
                 print(f"  [{i}] {dev['name']}")
         sys.exit(0)
 
-    pipe_fd  = open_pipe_with_retry(args.pipe)
-    hotwords = load_hotwords()
+    pipe_fd       = open_pipe_with_retry(args.pipe)
+    hotwords      = load_hotwords()
+    hotwords_ts   = hotwords_mtime()
     if hotwords:
-        print(f"Hotwords: {', '.join(hotwords)}")
+        print(f"Hotwords: {len(hotwords)} terms loaded")
 
     device_info  = sd.query_devices(args.device, 'input')
     device_rate  = int(device_info['default_samplerate'])
@@ -260,6 +267,11 @@ def main():
                 )
                 t_rec = time.monotonic()
                 status(f"{_YELLOW}⏳  Transcribing...  (recorded {t_rec - t0:.1f}s){_RESET}")
+                current_ts = hotwords_mtime()
+                if current_ts != hotwords_ts:
+                    hotwords    = load_hotwords()
+                    hotwords_ts = current_ts
+                    status(f"{_GRAY}Hotwords reloaded: {len(hotwords)} terms{_RESET}")
                 transcript = transcribe(cmd_audio, hotwords)
                 t_tr = time.monotonic()
 

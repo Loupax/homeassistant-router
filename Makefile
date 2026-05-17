@@ -5,7 +5,8 @@ SERVICE_DIR := $(HOME)/.config/systemd/user
 .PHONY: build install test clean \
         setup-listener \
         install-services enable disable start stop restart \
-        logs logs-listener
+        logs logs-listener \
+        update-hotwords install-hotwords-timer logs-hotwords
 
 build:
 	go build -o $(BINARY) .
@@ -48,3 +49,15 @@ logs:
 
 logs-listener:
 	journalctl --user -f -u homeassistant-listener
+
+update-hotwords:
+	python3 update_hotwords.py
+
+install-hotwords-timer:
+	mkdir -p $(SERVICE_DIR)
+	cp homeassistant-hotwords.service homeassistant-hotwords.timer $(SERVICE_DIR)/
+	systemctl --user daemon-reload
+	systemctl --user enable --now homeassistant-hotwords.timer
+
+logs-hotwords:
+	journalctl --user -f -u homeassistant-hotwords
