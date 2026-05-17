@@ -1,0 +1,20 @@
+[Unit]
+Description=Home Assistant Router
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/src/home-assistant
+# EnvironmentFile loads the same variables you would normally put in .envrc,
+# but in KEY=VALUE format that systemd understands.
+# Create ~/.config/homeassistant/env with content such as:
+#   HOMEASSISTANT_LLM_URL=https://api.anthropic.com/v1/messages
+#   HOMEASSISTANT_API_KEY=sk-ant-...
+#   HOMEASSISTANT_MODEL=claude-sonnet-4-6
+EnvironmentFile=%h/.config/homeassistant/env
+ExecStart=%h/src/home-assistant/homeassistant --input-pipe /tmp/homeassistant.pipe
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

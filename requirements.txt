@@ -1,0 +1,6 @@
+sounddevice
+numpy
+faster-whisper
+openwakeword
+torch
+torchaudio
