@@ -78,13 +78,11 @@ Say **"Hey Jarvis"**, then speak your command. The transcript is routed automati
 
 Without echo cancellation, the mic picks up audio played by mpv and can trigger false wake-word detections. PipeWire's WebRTC AEC module prevents this.
 
-**1. Install the PipeWire WebRTC AEC library:**
+**1. Find your real output sink name:**
 
 ```bash
-sudo pacman -S pipewire-audio  # already installed on most systems
-# The webrtc AEC backend lives in:
-#   /usr/lib/spa-0.2/aec/libspa-aec-webrtc.so
-# (provided by pipewire)
+pactl list short sinks
+# note the name, e.g. alsa_output.pci-0000_05_00.6.analog-stereo
 ```
 
 **2. Create the PipeWire config:**
@@ -93,19 +91,22 @@ sudo pacman -S pipewire-audio  # already installed on most systems
 mkdir -p ~/.config/pipewire/pipewire.conf.d
 ```
 
-`~/.config/pipewire/pipewire.conf.d/echo-cancel.conf`:
+`~/.config/pipewire/pipewire.conf.d/echo-cancel.conf` — replace `<your-sink>` with the name from step 1:
 
 ```
 context.modules = [
   { name = libpipewire-module-echo-cancel
     args = {
       library.name = aec/libspa-aec-webrtc
-      source.props = { node.name = "Echo-Cancel Source" }
-      sink.props   = { node.name = "Echo-Cancel Sink"   }
+      source.props   = { node.name = "Echo-Cancel Source" }
+      sink.props     = { node.name = "Echo-Cancel Sink"   }
+      playback.props = { node.target = "<your-sink>"      }
     }
   }
 ]
 ```
+
+`playback.props.node.target` tells PipeWire where to forward audio from Echo-Cancel Sink so you still hear it through speakers.
 
 **3. Restart PipeWire:**
 
@@ -113,14 +114,24 @@ context.modules = [
 systemctl --user restart pipewire pipewire-pulse
 ```
 
-**4. Verify and use:**
+**4. Set Echo-Cancel Sink as the default output:**
+
+AEC needs a reference signal — it only cancels audio that flows through Echo-Cancel Sink. Make it the default so mpv (and all other apps) route through it automatically:
 
 ```bash
-.venv311/bin/python listener --list-devices   # "Echo-Cancel Source" should appear
-.venv311/bin/python listener --device "Echo-Cancel Source" --pipe /tmp/homeassistant.pipe
+pactl set-default-sink "Echo-Cancel Sink"
 ```
 
-The systemd service (`homeassistant-listener.service`) is pre-configured to use `Echo-Cancel Source` automatically.
+To persist this across reboots, add it to your autostart (e.g. `~/.config/autostart/` or a systemd user service that runs after `pipewire-pulse.service`).
+
+**5. Verify:**
+
+```bash
+pactl info | grep "Default Sink"   # should say "Echo-Cancel Sink"
+.venv311/bin/python listener --list-devices   # "Echo-Cancel Source" should appear
+```
+
+The systemd service (`homeassistant-listener.service`) is pre-configured to use `Echo-Cancel Source` automatically. With AEC active, the volume bar in the listener should stay near zero while music plays.
 
 ## Running as systemd user services
 

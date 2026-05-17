@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import socket
+import subprocess
 import sys
 import time
 
@@ -67,8 +68,12 @@ whisper = WhisperModel(
 # ---------------------------------------------------------------------------
 
 def resample_to_model(chunk, device_rate):
-    """Convert int16 chunk from device_rate to SAMPLE_RATE float32 [-1, 1]."""
-    pcm = chunk.flatten().astype('float32') / 32768.0
+    """Convert int16 chunk from device_rate to SAMPLE_RATE float32 [-1, 1], downmix to mono."""
+    pcm = chunk.astype('float32') / 32768.0
+    if pcm.ndim > 1 and pcm.shape[1] > 1:
+        pcm = pcm.mean(axis=1)
+    else:
+        pcm = pcm.flatten()
     if device_rate == SAMPLE_RATE:
         return pcm
     return resample_poly(pcm, SAMPLE_RATE, device_rate).astype('float32')
@@ -93,6 +98,8 @@ def vad_score(chunk_np):
     return max(scores) if scores else 0.0
 
 
+MIN_COMMAND_SECONDS = 0.8  # always record at least this long before silence can trigger
+
 def record_until_silence(stream, device_rate, silence_seconds, max_seconds, initial_chunk=None):
     """Record chunks until Silero VAD detects sustained silence."""
     buffer = [initial_chunk] if initial_chunk is not None else []
@@ -100,11 +107,15 @@ def record_until_silence(stream, device_rate, silence_seconds, max_seconds, init
     device_chunk  = int(device_rate * CHUNK_MS / 1000)
     max_chunks    = int(max_seconds * 1000 / CHUNK_MS)
     silence_limit = int(silence_seconds * 1000 / CHUNK_MS)
+    min_chunks    = int(MIN_COMMAND_SECONDS * 1000 / CHUNK_MS)
 
-    for _ in range(max_chunks):
+    for i in range(max_chunks):
         chunk, _ = stream.read(device_chunk)
         chunk_np = resample_to_model(chunk, device_rate)
         buffer.append(chunk_np)
+
+        if i < min_chunks:
+            continue
 
         if vad_score(chunk_np) < 0.5:
             silence_chunks += 1
@@ -199,6 +210,41 @@ def write_to_pipe(pipe_fd, text, pipe_path):
 
 
 # ---------------------------------------------------------------------------
+# PipeWire native audio capture (bypasses PortAudio for virtual devices)
+# ---------------------------------------------------------------------------
+
+class PwRecordStream:
+    """pw-record subprocess stream, drop-in replacement for sd.InputStream.read()."""
+
+    def __init__(self, target):
+        self._target = target
+        self._proc   = None
+
+    def __enter__(self):
+        self._proc = subprocess.Popen(
+            ["pw-record", "--target", self._target,
+             "--format", "s16", "--rate", str(SAMPLE_RATE), "--channels", "1", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+        return self
+
+    def __exit__(self, *args):
+        if self._proc:
+            self._proc.terminate()
+            self._proc.wait()
+
+    def read(self, n_samples):
+        n_bytes = n_samples * 2  # int16 = 2 bytes/sample
+        buf = b""
+        while len(buf) < n_bytes:
+            chunk = self._proc.stdout.read(n_bytes - len(buf))
+            if not chunk:
+                raise EOFError("pw-record subprocess ended unexpectedly")
+            buf += chunk
+        return np.frombuffer(buf, dtype=np.int16).reshape(-1, 1), False
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -229,15 +275,23 @@ def main():
     if hotwords:
         print(f"Hotwords: {len(hotwords)} terms loaded")
 
-    device_info  = sd.query_devices(args.device, 'input')
-    device_rate  = int(device_info['default_samplerate'])
-    device_chunk = int(device_rate * CHUNK_MS / 1000)
-    print(f"Device: {device_rate}Hz → {SAMPLE_RATE}Hz  |  Wake word: \"{OWW_MODEL}\"")
+    if isinstance(args.device, str):
+        device_rate  = SAMPLE_RATE
+        device_chunk = CHUNK_SIZE
+        stream_ctx   = PwRecordStream(args.device)
+        print(f"Device: {args.device!r} via pw-record  |  Wake word: \"{OWW_MODEL}\"")
+    else:
+        device_info  = sd.query_devices(args.device, 'input')
+        device_rate  = int(device_info['default_samplerate'])
+        device_ch    = int(device_info['max_input_channels'])
+        device_chunk = int(device_rate * CHUNK_MS / 1000)
+        stream_ctx   = sd.InputStream(
+            samplerate=device_rate, channels=device_ch, dtype='int16',
+            blocksize=device_chunk, device=args.device,
+        )
+        print(f"Device: {device_rate}Hz {device_ch}ch → {SAMPLE_RATE}Hz mono  |  Wake word: \"{OWW_MODEL}\"")
 
-    with sd.InputStream(
-        samplerate=device_rate, channels=1, dtype='int16',
-        blocksize=device_chunk, device=args.device,
-    ) as stream:
+    with stream_ctx as stream:
         status(f"{_GRAY}Listening for wake word... (Ctrl+C to quit){_RESET}")
         while True:
             chunk, _ = stream.read(device_chunk)
