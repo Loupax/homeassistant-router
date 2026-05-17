@@ -179,8 +179,8 @@ def main():
             chunk_np = resample_to_model(chunk, device_rate)
 
             oww_model.predict(chunk_np)
-            scores = oww_model.prediction_buffer.get(_OWW_MODEL_KEY, [0])
-            if max(scores[-1:], default=0) > 0.5:
+            scores = oww_model.prediction_buffer.get(_OWW_MODEL_KEY, [])
+            if scores and scores[-1] > 0.5:
                 print("Wake word detected! Recording...")
                 audio_buffer = record_until_silence(stream, device_rate)
                 transcript = transcribe(audio_buffer)
