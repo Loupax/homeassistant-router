@@ -75,4 +75,44 @@ through Whisper transcription.
       each command ~20 times, and adjust thresholds in the config to balance false
       positive rate vs. latency.
 
+### Feature: Playlist support for media playback
+
+Goal: Allow voice commands to build, persist, and navigate playlists. Playlists
+are stored as JSON files in ~/.config/homeassistant/playlists/. mpv is driven
+via its existing Unix socket IPC at /tmp/ha-mpv.sock using the loadlist,
+playlist-next, and playlist-prev commands; yt-dlp resolves track queries to URLs
+before they are written into the playlist file.
+
+- [ ] Define playlist data model — create media/playlist.go with a Playlist
+      struct (Name, Tracks []Track where Track has Title and URL); add Load/Save
+      helpers that read/write JSON to ~/.config/homeassistant/playlists/<name>.json,
+      creating the directory if absent.
+
+- [ ] Implement playlist mutation commands — add AddTrack(query string) and
+      ClearPlaylist() to the media package; AddTrack resolves the query through
+      yt-dlp (reuse existing resolver), appends the resulting URL+title to the
+      named playlist file, and also issues an mpv loadfile ... append IPC call
+      so a live session picks up the new track without restart.
+
+- [ ] Implement PlayPlaylist command — add a PlayPlaylist(name string) function
+      that loads the named JSON file and calls mpv's loadlist IPC command with
+      the path to a temp M3U written from the playlist, then starts playback.
+      Default to a playlist named "default" when no name is given.
+
+- [ ] Implement navigation commands — add Next() and Previous() functions that
+      send playlist-next and playlist-prev over the mpv IPC socket; wire these
+      into the router alongside the existing stop/pause/resume handlers.
+
+- [ ] Implement ShowPlaylist command — add ShowPlaylist(name string) that reads
+      the JSON file and returns a formatted string listing track titles with their
+      position index; the router prints this to stdout (same pattern as other
+      informational commands).
+
+- [ ] Add intent patterns to router — extend router/ with new intent cases for:
+        "add to playlist", "queue this", "queue [query]"  → AddTrack
+        "play playlist [name]"                            → PlayPlaylist
+        "next" / "skip"                                   → Next
+        "previous" / "go back"                            → Previous
+        "show playlist" / "what's in the queue"           → ShowPlaylist
+
 ## Completed
