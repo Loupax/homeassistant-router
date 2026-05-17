@@ -59,7 +59,7 @@ vad_model, _ = torch.hub.load(
     'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
 )
 
-whisper_wake = WhisperModel("small.en", device="cpu", compute_type="int8")
+whisper_wake = WhisperModel("Systran/faster-distil-whisper-small.en", device="cpu", compute_type="int8")
 whisper_cmd  = whisper_wake  # same model; phase 1 audio is short so it's still fast
 
 
@@ -138,11 +138,12 @@ def transcribe_command(audio_np):
 
 
 def strip_wake_phrase(text):
-    """Remove leading wake phrase (case-insensitive). Returns remainder or None."""
+    """Find wake phrase anywhere in text (case-insensitive). Returns everything after it, or None."""
     lower = text.lower().strip()
-    if lower.startswith(WAKE_PHRASE):
-        return text[len(WAKE_PHRASE):].strip(" ,.")
-    return None
+    idx = lower.find(WAKE_PHRASE)
+    if idx == -1:
+        return None
+    return text[idx + len(WAKE_PHRASE):].strip(" ,.")
 
 
 def _mpv_command(command):
@@ -170,6 +171,18 @@ def unduck_volume(prev):
     """Restore mpv volume to the value returned by duck_volume()."""
     if prev is not None:
         _mpv_command(["set_property", "volume", prev])
+
+
+_GRAY   = "\033[90m"
+_YELLOW = "\033[33m"
+_GREEN  = "\033[32m"
+_CYAN   = "\033[36m"
+_RED    = "\033[31m"
+_RESET  = "\033[0m"
+
+def status(msg):
+    """Print a full-width status line, clearing the VU meter."""
+    print(f"\r\033[K{msg}", flush=True)
 
 
 def write_to_pipe(pipe_fd, text, pipe_path):
@@ -231,7 +244,7 @@ def main():
         blocksize=device_chunk,
         device=args.device,
     ) as stream:
-        print("Listening... (Ctrl+C to quit)")
+        print(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
         while True:
             chunk, _ = stream.read(device_chunk)
             chunk_np = resample_to_model(chunk, device_rate)
@@ -242,57 +255,57 @@ def main():
             vad_bars = int(prob * 10)
 
             print(
-                f"\r🎙  [{'█' * vol_bars:<30}]  vad:{prob:.2f} [{'█' * vad_bars:<10}]",
+                f"\r{_GRAY}🎙  [{'█' * vol_bars:<30}]  vad:{prob:.2f} [{'█' * vad_bars:<10}]{_RESET}",
                 end="", flush=True,
             )
 
             if prob < VAD_ONSET_THRESHOLD:
                 continue
 
-            # ---- Phase 1: detect wake phrase with tiny.en ----
-            print("\nSpeech detected...")
+            # ---- Phase 1: detect wake phrase ----
+            status(f"{_YELLOW}⏺  Recording...{_RESET}")
             wake_audio = record_until_silence(
                 stream, device_rate,
                 silence_seconds=SILENCE_WAKE_SECONDS,
                 max_seconds=MAX_WAKE_SECONDS,
                 initial_chunk=chunk_np,
             )
+            status(f"{_YELLOW}⏳  Transcribing...{_RESET}")
             wake_transcript = transcribe_wake(wake_audio)
             if not wake_transcript:
-                print("Listening... (Ctrl+C to quit)")
+                status(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
                 continue
 
-            print(f"Heard: {wake_transcript}")
             inline_command = strip_wake_phrase(wake_transcript)
             if inline_command is None:
-                print("(no wake phrase — ignoring)")
-                print("Listening... (Ctrl+C to quit)")
+                status(f"{_GRAY}Ignored: {wake_transcript}{_RESET}")
+                status(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
                 continue
 
-            # ---- Phase 2: record command with small.en ----
+            # ---- Phase 2: record command ----
             prev_vol = duck_volume()
             try:
                 if inline_command:
-                    # User said wake phrase + command in one breath
                     command = inline_command
                 else:
-                    print("Listening for command...")
+                    status(f"{_GREEN}✓  Wake phrase! Listening for command...{_RESET}")
                     cmd_audio = record_until_silence(
                         stream, device_rate,
                         silence_seconds=SILENCE_COMMAND_SECONDS,
                         max_seconds=MAX_COMMAND_SECONDS,
                     )
+                    status(f"{_YELLOW}⏳  Transcribing command...{_RESET}")
                     command = transcribe_command(cmd_audio)
 
                 if command:
-                    print(f"Command: {command}")
+                    status(f"{_CYAN}▶  {command}{_RESET}")
                     pipe_fd = write_to_pipe(pipe_fd, command, args.pipe)
                 else:
-                    print("(no command heard)")
+                    status(f"{_RED}✗  No command heard{_RESET}")
             finally:
                 unduck_volume(prev_vol)
 
-            print("Listening... (Ctrl+C to quit)")
+            status(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
 
 
 if __name__ == "__main__":
