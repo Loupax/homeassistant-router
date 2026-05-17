@@ -24,7 +24,6 @@ Device index: run `python listener.py --list-devices` to see available inputs.
 """
 
 import argparse
-import os
 import sys
 import time
 
@@ -86,9 +85,13 @@ def vad_score(chunk_np):
     return vad_model(tensor, SAMPLE_RATE).item()
 
 
-def record_until_silence(stream, device_rate):
-    """Record audio chunks until Silero VAD detects sustained silence."""
-    buffer = []
+def record_until_silence(stream, device_rate, initial_chunk=None):
+    """Record audio chunks until Silero VAD detects sustained silence.
+
+    initial_chunk: float32 16kHz chunk that triggered VAD onset; prepended
+    to the buffer so the onset of speech is not lost.
+    """
+    buffer = [initial_chunk] if initial_chunk is not None else []
     silence_chunks = 0
     device_chunk = int(device_rate * CHUNK_MS / 1000)
     max_chunks = int(MAX_RECORD_SECONDS * 1000 / CHUNK_MS)
@@ -203,7 +206,7 @@ def main():
 
             if prob >= VAD_ONSET_THRESHOLD:
                 print("\nSpeech detected — recording...")
-                audio_buffer = record_until_silence(stream, device_rate)
+                audio_buffer = record_until_silence(stream, device_rate, initial_chunk=chunk_np)
                 transcript = transcribe(audio_buffer)
                 if transcript:
                     print(f"Heard: {transcript}")
