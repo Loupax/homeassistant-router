@@ -39,7 +39,7 @@ SAMPLE_RATE = 16000        # Hz — required by all models
 CHUNK_MS    = 32           # ms per chunk — Silero VAD requires exactly 512 samples @ 16kHz
 CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 512 samples
 
-MAX_WAKE_SECONDS    = 3    # max recording length for wake phrase detection
+MAX_WAKE_SECONDS    = 2    # max recording length for wake phrase detection
 MAX_COMMAND_SECONDS = 10   # max recording length for command
 
 SILENCE_WAKE_SECONDS    = 0.7  # silence to end wake phrase recording
@@ -59,8 +59,13 @@ vad_model, _ = torch.hub.load(
     'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
 )
 
-whisper_wake = WhisperModel("Systran/faster-distil-whisper-small.en", device="cpu", compute_type="int8")
-whisper_cmd  = whisper_wake  # same model; phase 1 audio is short so it's still fast
+whisper_wake = WhisperModel(
+    "Systran/faster-distil-whisper-small.en",
+    device="cpu",
+    compute_type="int8",
+    cpu_threads=4,
+)
+whisper_cmd = whisper_wake  # same model; phase 1 audio is short so it's still fast
 
 
 # ---------------------------------------------------------------------------
@@ -117,10 +122,13 @@ def record_until_silence(stream, device_rate, silence_seconds, max_seconds, init
 
 _COMMAND_PROMPT = "Hey Jarvis, play music, stop, louder, quieter, pause, resume, what's the weather."
 
+_WAKE_PROMPT = "Hey Jarvis."
+
 def transcribe_wake(audio_np):
     """Fast wake-phrase detection with tiny.en, greedy decoding."""
     segments, _ = whisper_wake.transcribe(
         audio_np, language="en", beam_size=1, vad_filter=True,
+        initial_prompt=_WAKE_PROMPT,
     )
     return " ".join(s.text.strip() for s in segments).strip()
 
