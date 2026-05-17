@@ -24,6 +24,8 @@ Device index: run `python listener.py --list-devices` to see available inputs.
 """
 
 import argparse
+import json
+import socket
 import sys
 import time
 
@@ -43,6 +45,8 @@ PIPE_PATH = "/tmp/homeassistant.pipe"
 
 WAKE_PHRASE = "hey jarvis"
 VAD_ONSET_THRESHOLD = 0.5   # VAD score to trigger recording
+MPV_SOCKET = "/tmp/ha-mpv.sock"
+DUCK_VOLUME = 5              # % to duck to while listening
 
 # ---------------------------------------------------------------------------
 # Model initialisation (module level — loaded once at startup)
@@ -136,6 +140,33 @@ def strip_wake_phrase(text):
     return None
 
 
+def _mpv_command(command):
+    """Send a JSON command to the mpv IPC socket; returns response data or None."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            s.connect(MPV_SOCKET)
+            s.sendall((json.dumps({"command": command}) + "\n").encode())
+            data = json.loads(s.recv(4096).decode().strip())
+            return data.get("data")
+    except (FileNotFoundError, ConnectionRefusedError, OSError, json.JSONDecodeError):
+        return None
+
+
+def duck_volume():
+    """Lower mpv volume to DUCK_VOLUME%; return previous volume (or None if mpv not running)."""
+    prev = _mpv_command(["get_property", "volume"])
+    if prev is not None:
+        _mpv_command(["set_property", "volume", DUCK_VOLUME])
+    return prev
+
+
+def unduck_volume(prev):
+    """Restore mpv volume to the value returned by duck_volume()."""
+    if prev is not None:
+        _mpv_command(["set_property", "volume", prev])
+
+
 def write_to_pipe(pipe_fd, text, pipe_path):
     """Write a line to the FIFO, reconnecting if the router has gone away."""
     try:
@@ -213,8 +244,12 @@ def main():
 
             if prob >= VAD_ONSET_THRESHOLD:
                 print("\nSpeech detected — recording...")
-                audio_buffer = record_until_silence(stream, device_rate, initial_chunk=chunk_np)
-                transcript = transcribe(audio_buffer)
+                prev_vol = duck_volume()
+                try:
+                    audio_buffer = record_until_silence(stream, device_rate, initial_chunk=chunk_np)
+                    transcript = transcribe(audio_buffer)
+                finally:
+                    unduck_volume(prev_vol)
                 if transcript:
                     print(f"Heard: {transcript}")
                     command = strip_wake_phrase(transcript)
