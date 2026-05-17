@@ -11,7 +11,8 @@ sudo pacman -S mpv yt-dlp ffmpeg portaudio
 ## Installation
 
 ```bash
-go build -o homeassistant .
+make build       # build binary
+make install     # build + copy to ~/bin
 ```
 
 ## Environment variables
@@ -57,7 +58,7 @@ Requires the Python listener service.
 ### One-time setup
 
 ```bash
-./setup-listener.sh                           # creates .venv and installs deps
+make setup-listener                           # creates .venv and installs deps
 .venv/bin/python listener.py --list-devices   # find your USB mic index
 ```
 
@@ -76,16 +77,18 @@ Say **"Hey Jarvis"**, then speak your command. The transcript is routed automati
 ## Running as systemd user services
 
 ```bash
-cp homeassistant-router.service homeassistant-listener.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now homeassistant-router homeassistant-listener
+make enable    # install service files, daemon-reload, enable and start both services
 ```
 
-View logs:
+Other service commands:
 
 ```bash
-journalctl --user -f -u homeassistant-router
-journalctl --user -f -u homeassistant-listener
+make start     # start both services
+make stop      # stop both services
+make restart   # restart both services
+make disable   # stop and disable both services
+make logs      # tail router logs
+make logs-listener  # tail listener logs
 ```
 
 ## Routing pipeline
@@ -102,5 +105,5 @@ Conversation history is persisted to `~/.config/homeassistant/state.json` and ev
 ## Running tests
 
 ```bash
-go test ./...
+make test
 ```
