@@ -1,0 +1,13 @@
+{"pattern":"stop","intent":"stop"}
+{"pattern":"stop playing","intent":"stop"}
+{"pattern":"stop music","intent":"stop"}
+{"pattern":"louder","intent":"volume_up"}
+{"pattern":"volume up","intent":"volume_up"}
+{"pattern":"quieter","intent":"volume_down"}
+{"pattern":"quiet","intent":"volume_down"}
+{"pattern":"volume down","intent":"volume_down"}
+{"pattern":"lower","intent":"volume_down"}
+{"pattern":"pause","intent":"pause"}
+{"pattern":"resume","intent":"resume"}
+{"pattern":"continue","intent":"resume"}
+{"pattern":"unpause","intent":"resume"}
