@@ -36,8 +36,8 @@ from faster_whisper import WhisperModel
 from openwakeword.model import Model
 
 SAMPLE_RATE = 16000        # Hz — required by all three models
-CHUNK_MS    = 32           # ms per audio chunk
-CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # samples per chunk
+CHUNK_MS    = 80           # ms per chunk — openWakeWord requires multiples of 80ms
+CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 1280 samples
 
 MAX_RECORD_SECONDS = 10
 SILENCE_THRESHOLD_SECONDS = 1.5
@@ -180,10 +180,13 @@ def main():
 
             rms = float(np.sqrt(np.mean(chunk_np ** 2)))
             bars = int(min(rms * 400, 30))
-            print(f"\r🎙  [{'█' * bars:<30}] {'HEY JARVIS?' if bars > 5 else '':>11}", end="", flush=True)
 
             oww_model.predict(chunk_np)
             scores = oww_model.prediction_buffer.get(_OWW_MODEL_KEY, [])
+            score = scores[-1] if scores else 0.0
+            score_bar = int(score * 10)
+            print(f"\r🎙  [{'█' * bars:<30}]  wake:{score:.2f} [{'█' * score_bar:<10}]", end="", flush=True)
+
             if scores and scores[-1] > 0.5:
                 print("\nWake word detected! Recording...")
                 audio_buffer = record_until_silence(stream, device_rate)
