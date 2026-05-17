@@ -42,8 +42,8 @@ CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 512 samples
 MAX_WAKE_SECONDS    = 2    # max recording length for wake phrase detection
 MAX_COMMAND_SECONDS = 10   # max recording length for command
 
-SILENCE_WAKE_SECONDS    = 0.7  # silence to end wake phrase recording
-SILENCE_COMMAND_SECONDS = 0.7  # silence to end command recording
+SILENCE_WAKE_SECONDS    = 1.0  # silence to end wake phrase recording
+SILENCE_COMMAND_SECONDS = 1.0  # silence to end command recording
 
 PIPE_PATH = "/tmp/homeassistant.pipe"
 WAKE_PHRASE = "hey jarvis"
