@@ -6,8 +6,8 @@ Dependencies (pip):
     sounddevice
     numpy
     faster-whisper
-    openwakeword
     torch torchaudio   (for silero-vad)
+    scipy
 
 System packages (pacman):
     portaudio          (already installed)
@@ -19,7 +19,7 @@ Usage:
 Device index: run `python listener.py --list-devices` to see available inputs.
 
 # Install dependencies:
-#   pip install sounddevice numpy faster-whisper openwakeword torch torchaudio
+#   pip install sounddevice numpy faster-whisper torch torchaudio scipy
 #   sudo pacman -S portaudio ffmpeg
 """
 
@@ -33,23 +33,21 @@ import sounddevice as sd
 import torch
 from scipy.signal import resample_poly
 from faster_whisper import WhisperModel
-from openwakeword.model import Model
 
-SAMPLE_RATE = 16000        # Hz — required by all three models
-CHUNK_MS    = 80           # ms per chunk — openWakeWord requires multiples of 80ms
-CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 1280 samples
+SAMPLE_RATE = 16000        # Hz — required by all models
+CHUNK_MS    = 96           # ms per chunk — balance between latency and VAD accuracy
+CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 1536 samples
 
 MAX_RECORD_SECONDS = 10
 SILENCE_THRESHOLD_SECONDS = 1.5
 PIPE_PATH = "/tmp/homeassistant.pipe"
 
+WAKE_PHRASE = "hey jarvis"
+VAD_ONSET_THRESHOLD = 0.5   # VAD score to trigger recording
+
 # ---------------------------------------------------------------------------
 # Model initialisation (module level — loaded once at startup)
 # ---------------------------------------------------------------------------
-
-_OWW_MODEL_DIR = os.path.join(os.path.dirname(__import__("openwakeword").__file__), "resources/models")
-_OWW_MODEL_KEY = "hey_jarvis_v0.1"
-oww_model = Model(wakeword_model_paths=[os.path.join(_OWW_MODEL_DIR, f"{_OWW_MODEL_KEY}.onnx")])
 
 vad_model, utils = torch.hub.load(
     'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
@@ -82,6 +80,12 @@ def open_pipe_with_retry(path):
             time.sleep(2)
 
 
+def vad_score(chunk_np):
+    """Return Silero VAD speech probability for a float32 16kHz chunk."""
+    tensor = torch.tensor(chunk_np)
+    return vad_model(tensor, SAMPLE_RATE).item()
+
+
 def record_until_silence(stream, device_rate):
     """Record audio chunks until Silero VAD detects sustained silence."""
     buffer = []
@@ -95,8 +99,7 @@ def record_until_silence(stream, device_rate):
         chunk_np = resample_to_model(chunk, device_rate)
         buffer.append(chunk_np)
 
-        tensor = torch.tensor(chunk_np)
-        speech_prob = vad_model(tensor, SAMPLE_RATE).item()
+        speech_prob = vad_score(chunk_np)
 
         if speech_prob < 0.5:
             silence_chunks += 1
@@ -112,6 +115,15 @@ def transcribe(audio_np):
     """Transcribe audio using faster-whisper and return a single string."""
     segments, _ = whisper.transcribe(audio_np, language="en")
     return " ".join(s.text.strip() for s in segments).strip()
+
+
+def strip_wake_phrase(text):
+    """Remove leading wake phrase (case-insensitive). Returns remainder or None."""
+    lower = text.lower().strip()
+    if lower.startswith(WAKE_PHRASE):
+        remainder = text[len(WAKE_PHRASE):].strip(" ,.")
+        return remainder
+    return None
 
 
 def write_to_pipe(pipe_fd, text, pipe_path):
@@ -160,11 +172,11 @@ def main():
 
     pipe_fd = open_pipe_with_retry(args.pipe)
 
-    # Use device's native sample rate; resample to MODEL_RATE for all models
     device_info = sd.query_devices(args.device, 'input')
     device_rate = int(device_info['default_samplerate'])
     device_chunk = int(device_rate * CHUNK_MS / 1000)
     print(f"Device sample rate: {device_rate}Hz (resampling to {SAMPLE_RATE}Hz)")
+    print(f"Wake phrase: \"{WAKE_PHRASE}\"")
 
     with sd.InputStream(
         samplerate=device_rate,
@@ -173,28 +185,38 @@ def main():
         blocksize=device_chunk,
         device=args.device,
     ) as stream:
-        print("Listening for wake word... (Ctrl+C to quit)")
+        print("Listening... (Ctrl+C to quit)")
         while True:
             chunk, _ = stream.read(device_chunk)
             chunk_np = resample_to_model(chunk, device_rate)
 
             rms = float(np.sqrt(np.mean(chunk_np ** 2)))
-            bars = int(min(rms * 400, 30))
+            vol_bars = int(min(rms * 400, 30))
 
-            oww_model.predict(chunk_np)
-            scores = oww_model.prediction_buffer.get(_OWW_MODEL_KEY, [])
-            score = scores[-1] if scores else 0.0
-            score_bar = int(score * 10)
-            print(f"\r🎙  [{'█' * bars:<30}]  wake:{score:.2f} [{'█' * score_bar:<10}]", end="", flush=True)
+            prob = vad_score(chunk_np)
+            vad_bars = int(prob * 10)
 
-            if scores and scores[-1] > 0.5:
-                print("\nWake word detected! Recording...")
+            print(
+                f"\r🎙  [{'█' * vol_bars:<30}]  vad:{prob:.2f} [{'█' * vad_bars:<10}]",
+                end="", flush=True,
+            )
+
+            if prob >= VAD_ONSET_THRESHOLD:
+                print("\nSpeech detected — recording...")
                 audio_buffer = record_until_silence(stream, device_rate)
                 transcript = transcribe(audio_buffer)
                 if transcript:
-                    print(f"Transcribed: {transcript}")
-                    pipe_fd = write_to_pipe(pipe_fd, transcript, args.pipe)
-                print("Listening for wake word... (Ctrl+C to quit)")
+                    print(f"Heard: {transcript}")
+                    command = strip_wake_phrase(transcript)
+                    if command is not None:
+                        if command:
+                            print(f"Command: {command}")
+                            pipe_fd = write_to_pipe(pipe_fd, command, args.pipe)
+                        else:
+                            print("(wake phrase only — no command)")
+                    else:
+                        print("(no wake phrase — ignoring)")
+                print("Listening... (Ctrl+C to quit)")
 
 
 if __name__ == "__main__":
