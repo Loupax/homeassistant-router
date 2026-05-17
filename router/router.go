@@ -73,19 +73,18 @@ func Route(appCtx *AppContext, line string) {
 
 	// Slow path — LLM classifier
 	classification, err := Classify(line, appCtx.LLMEndpoint, appCtx.APIKey, appCtx.Model)
-	if err == nil {
-		switch classification.Intent {
-		case "unknown":
-			fmt.Println("I don't know how to do that yet.")
-			return
-		case "discuss":
-			// fall through to discussion
-		default:
-			dispatch(appCtx, classification.Intent, classification.Payload)
-			return
-		}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "router: classifier error: %v\n", err)
+		fmt.Println("I don't know how to do that yet.")
+		return
 	}
 
-	// Final fallback — discussion
-	appCtx.Discussion.Submit(line)
+	switch classification.Intent {
+	case "discuss":
+		appCtx.Discussion.Submit(line)
+	case "unknown":
+		fmt.Println("I don't know how to do that yet.")
+	default:
+		dispatch(appCtx, classification.Intent, classification.Payload)
+	}
 }

@@ -39,25 +39,30 @@ SAMPLE_RATE = 16000        # Hz — required by all models
 CHUNK_MS    = 32           # ms per chunk — Silero VAD requires exactly 512 samples @ 16kHz
 CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 512 samples
 
-MAX_RECORD_SECONDS = 10
-SILENCE_THRESHOLD_SECONDS = 1.5
-PIPE_PATH = "/tmp/homeassistant.pipe"
+MAX_WAKE_SECONDS    = 3    # max recording length for wake phrase detection
+MAX_COMMAND_SECONDS = 10   # max recording length for command
 
+SILENCE_WAKE_SECONDS    = 0.5  # silence to end wake phrase recording
+SILENCE_COMMAND_SECONDS = 0.7  # silence to end command recording
+
+PIPE_PATH = "/tmp/homeassistant.pipe"
 WAKE_PHRASE = "hey jarvis"
-VAD_ONSET_THRESHOLD = 0.5   # VAD score to trigger recording
+VAD_ONSET_THRESHOLD = 0.5
 MPV_SOCKET = "/tmp/ha-mpv.sock"
-DUCK_VOLUME = 5              # % to duck to while listening
+DUCK_VOLUME = 5
 
 # ---------------------------------------------------------------------------
 # Model initialisation (module level — loaded once at startup)
 # ---------------------------------------------------------------------------
 
-vad_model, utils = torch.hub.load(
+vad_model, _ = torch.hub.load(
     'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
 )
-(get_speech_timestamps, _, read_audio, *_) = utils
 
-whisper = WhisperModel("small.en", device="cpu", compute_type="int8")
+# Phase 1: tiny.en detects the wake phrase quickly
+whisper_wake = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+# Phase 2: small.en transcribes the command accurately
+whisper_cmd  = WhisperModel("small.en", device="cpu", compute_type="int8")
 
 
 # ---------------------------------------------------------------------------
@@ -89,26 +94,20 @@ def vad_score(chunk_np):
     return vad_model(tensor, SAMPLE_RATE).item()
 
 
-def record_until_silence(stream, device_rate, initial_chunk=None):
-    """Record audio chunks until Silero VAD detects sustained silence.
-
-    initial_chunk: float32 16kHz chunk that triggered VAD onset; prepended
-    to the buffer so the onset of speech is not lost.
-    """
+def record_until_silence(stream, device_rate, silence_seconds, max_seconds, initial_chunk=None):
+    """Record audio chunks until Silero VAD detects sustained silence."""
     buffer = [initial_chunk] if initial_chunk is not None else []
     silence_chunks = 0
-    device_chunk = int(device_rate * CHUNK_MS / 1000)
-    max_chunks = int(MAX_RECORD_SECONDS * 1000 / CHUNK_MS)
-    silence_limit = int(SILENCE_THRESHOLD_SECONDS * 1000 / CHUNK_MS)
+    device_chunk  = int(device_rate * CHUNK_MS / 1000)
+    max_chunks    = int(max_seconds * 1000 / CHUNK_MS)
+    silence_limit = int(silence_seconds * 1000 / CHUNK_MS)
 
     for _ in range(max_chunks):
         chunk, _ = stream.read(device_chunk)
         chunk_np = resample_to_model(chunk, device_rate)
         buffer.append(chunk_np)
 
-        speech_prob = vad_score(chunk_np)
-
-        if speech_prob < 0.5:
+        if vad_score(chunk_np) < 0.5:
             silence_chunks += 1
             if silence_chunks >= silence_limit:
                 break
@@ -118,14 +117,23 @@ def record_until_silence(stream, device_rate, initial_chunk=None):
     return np.concatenate(buffer)
 
 
-_INITIAL_PROMPT = "Hey Jarvis, play music, stop, louder, quieter, pause, resume, what's the weather."
+_COMMAND_PROMPT = "Hey Jarvis, play music, stop, louder, quieter, pause, resume, what's the weather."
 
-def transcribe(audio_np):
-    """Transcribe audio using faster-whisper and return a single string."""
-    segments, _ = whisper.transcribe(
+def transcribe_wake(audio_np):
+    """Fast wake-phrase detection with tiny.en, greedy decoding."""
+    segments, _ = whisper_wake.transcribe(
+        audio_np, language="en", beam_size=1, vad_filter=True,
+    )
+    return " ".join(s.text.strip() for s in segments).strip()
+
+
+def transcribe_command(audio_np):
+    """Accurate command transcription with small.en, greedy decoding."""
+    segments, _ = whisper_cmd.transcribe(
         audio_np,
         language="en",
-        initial_prompt=_INITIAL_PROMPT,
+        beam_size=1,
+        initial_prompt=_COMMAND_PROMPT,
         vad_filter=True,
     )
     return " ".join(s.text.strip() for s in segments).strip()
@@ -135,8 +143,7 @@ def strip_wake_phrase(text):
     """Remove leading wake phrase (case-insensitive). Returns remainder or None."""
     lower = text.lower().strip()
     if lower.startswith(WAKE_PHRASE):
-        remainder = text[len(WAKE_PHRASE):].strip(" ,.")
-        return remainder
+        return text[len(WAKE_PHRASE):].strip(" ,.")
     return None
 
 
@@ -154,7 +161,7 @@ def _mpv_command(command):
 
 
 def duck_volume():
-    """Lower mpv volume to DUCK_VOLUME%; return previous volume (or None if mpv not running)."""
+    """Lower mpv volume to DUCK_VOLUME%; return previous volume (or None)."""
     prev = _mpv_command(["get_property", "volume"])
     if prev is not None:
         _mpv_command(["set_property", "volume", DUCK_VOLUME])
@@ -213,8 +220,8 @@ def main():
 
     pipe_fd = open_pipe_with_retry(args.pipe)
 
-    device_info = sd.query_devices(args.device, 'input')
-    device_rate = int(device_info['default_samplerate'])
+    device_info  = sd.query_devices(args.device, 'input')
+    device_rate  = int(device_info['default_samplerate'])
     device_chunk = int(device_rate * CHUNK_MS / 1000)
     print(f"Device sample rate: {device_rate}Hz (resampling to {SAMPLE_RATE}Hz)")
     print(f"Wake phrase: \"{WAKE_PHRASE}\"")
@@ -231,10 +238,9 @@ def main():
             chunk, _ = stream.read(device_chunk)
             chunk_np = resample_to_model(chunk, device_rate)
 
-            rms = float(np.sqrt(np.mean(chunk_np ** 2)))
+            rms      = float(np.sqrt(np.mean(chunk_np ** 2)))
             vol_bars = int(min(rms * 400, 30))
-
-            prob = vad_score(chunk_np)
+            prob     = vad_score(chunk_np)
             vad_bars = int(prob * 10)
 
             print(
@@ -242,26 +248,53 @@ def main():
                 end="", flush=True,
             )
 
-            if prob >= VAD_ONSET_THRESHOLD:
-                print("\nSpeech detected — recording...")
-                audio_buffer = record_until_silence(stream, device_rate, initial_chunk=chunk_np)
-                transcript = transcribe(audio_buffer)
-                if transcript:
-                    print(f"Heard: {transcript}")
-                    command = strip_wake_phrase(transcript)
-                    if command is not None:
-                        prev_vol = duck_volume()
-                        try:
-                            if command:
-                                print(f"Command: {command}")
-                                pipe_fd = write_to_pipe(pipe_fd, command, args.pipe)
-                            else:
-                                print("(wake phrase only — no command)")
-                        finally:
-                            unduck_volume(prev_vol)
-                    else:
-                        print("(no wake phrase — ignoring)")
+            if prob < VAD_ONSET_THRESHOLD:
+                continue
+
+            # ---- Phase 1: detect wake phrase with tiny.en ----
+            print("\nSpeech detected...")
+            wake_audio = record_until_silence(
+                stream, device_rate,
+                silence_seconds=SILENCE_WAKE_SECONDS,
+                max_seconds=MAX_WAKE_SECONDS,
+                initial_chunk=chunk_np,
+            )
+            wake_transcript = transcribe_wake(wake_audio)
+            if not wake_transcript:
                 print("Listening... (Ctrl+C to quit)")
+                continue
+
+            print(f"Heard: {wake_transcript}")
+            inline_command = strip_wake_phrase(wake_transcript)
+            if inline_command is None:
+                print("(no wake phrase — ignoring)")
+                print("Listening... (Ctrl+C to quit)")
+                continue
+
+            # ---- Phase 2: record command with small.en ----
+            prev_vol = duck_volume()
+            try:
+                if inline_command:
+                    # User said wake phrase + command in one breath
+                    command = inline_command
+                else:
+                    print("Listening for command...")
+                    cmd_audio = record_until_silence(
+                        stream, device_rate,
+                        silence_seconds=SILENCE_COMMAND_SECONDS,
+                        max_seconds=MAX_COMMAND_SECONDS,
+                    )
+                    command = transcribe_command(cmd_audio)
+
+                if command:
+                    print(f"Command: {command}")
+                    pipe_fd = write_to_pipe(pipe_fd, command, args.pipe)
+                else:
+                    print("(no command heard)")
+            finally:
+                unduck_volume(prev_vol)
+
+            print("Listening... (Ctrl+C to quit)")
 
 
 if __name__ == "__main__":
