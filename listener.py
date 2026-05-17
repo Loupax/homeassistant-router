@@ -42,7 +42,7 @@ CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 512 samples
 MAX_WAKE_SECONDS    = 3    # max recording length for wake phrase detection
 MAX_COMMAND_SECONDS = 10   # max recording length for command
 
-SILENCE_WAKE_SECONDS    = 0.5  # silence to end wake phrase recording
+SILENCE_WAKE_SECONDS    = 0.7  # silence to end wake phrase recording
 SILENCE_COMMAND_SECONDS = 0.7  # silence to end command recording
 
 PIPE_PATH = "/tmp/homeassistant.pipe"
@@ -59,10 +59,8 @@ vad_model, _ = torch.hub.load(
     'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
 )
 
-# Phase 1: tiny.en detects the wake phrase quickly
-whisper_wake = WhisperModel("tiny.en", device="cpu", compute_type="int8")
-# Phase 2: small.en transcribes the command accurately
-whisper_cmd  = WhisperModel("small.en", device="cpu", compute_type="int8")
+whisper_wake = WhisperModel("small.en", device="cpu", compute_type="int8")
+whisper_cmd  = whisper_wake  # same model; phase 1 audio is short so it's still fast
 
 
 # ---------------------------------------------------------------------------
