@@ -53,7 +53,7 @@ vad_model, utils = torch.hub.load(
 )
 (get_speech_timestamps, _, read_audio, *_) = utils
 
-whisper = WhisperModel("base.en", device="cpu", compute_type="int8")
+whisper = WhisperModel("small.en", device="cpu", compute_type="int8")
 
 
 # ---------------------------------------------------------------------------
@@ -114,9 +114,16 @@ def record_until_silence(stream, device_rate, initial_chunk=None):
     return np.concatenate(buffer)
 
 
+_INITIAL_PROMPT = "Hey Jarvis, play music, stop, louder, quieter, pause, resume, what's the weather."
+
 def transcribe(audio_np):
     """Transcribe audio using faster-whisper and return a single string."""
-    segments, _ = whisper.transcribe(audio_np, language="en")
+    segments, _ = whisper.transcribe(
+        audio_np,
+        language="en",
+        initial_prompt=_INITIAL_PROMPT,
+        vad_filter=True,
+    )
     return " ".join(s.text.strip() for s in segments).strip()
 
 
