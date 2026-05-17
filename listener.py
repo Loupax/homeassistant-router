@@ -244,21 +244,21 @@ def main():
 
             if prob >= VAD_ONSET_THRESHOLD:
                 print("\nSpeech detected — recording...")
-                prev_vol = duck_volume()
-                try:
-                    audio_buffer = record_until_silence(stream, device_rate, initial_chunk=chunk_np)
-                    transcript = transcribe(audio_buffer)
-                finally:
-                    unduck_volume(prev_vol)
+                audio_buffer = record_until_silence(stream, device_rate, initial_chunk=chunk_np)
+                transcript = transcribe(audio_buffer)
                 if transcript:
                     print(f"Heard: {transcript}")
                     command = strip_wake_phrase(transcript)
                     if command is not None:
-                        if command:
-                            print(f"Command: {command}")
-                            pipe_fd = write_to_pipe(pipe_fd, command, args.pipe)
-                        else:
-                            print("(wake phrase only — no command)")
+                        prev_vol = duck_volume()
+                        try:
+                            if command:
+                                print(f"Command: {command}")
+                                pipe_fd = write_to_pipe(pipe_fd, command, args.pipe)
+                            else:
+                                print("(wake phrase only — no command)")
+                        finally:
+                            unduck_volume(prev_vol)
                     else:
                         print("(no wake phrase — ignoring)")
                 print("Listening... (Ctrl+C to quit)")
