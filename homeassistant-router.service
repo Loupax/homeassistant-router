@@ -12,7 +12,7 @@ WorkingDirectory=%h/src/home-assistant
 #   HOMEASSISTANT_API_KEY=sk-ant-...
 #   HOMEASSISTANT_MODEL=claude-sonnet-4-6
 EnvironmentFile=%h/.config/homeassistant/env
-ExecStart=%h/src/home-assistant/homeassistant --input-pipe /tmp/homeassistant.pipe
+ExecStart=%h/.local/bin/homeassistant --input-pipe /tmp/homeassistant.pipe
 Restart=on-failure
 RestartSec=3
 
