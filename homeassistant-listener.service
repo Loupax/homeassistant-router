@@ -6,7 +6,7 @@ Wants=homeassistant-router.service
 [Service]
 Type=simple
 WorkingDirectory=%h/src/home-assistant
-ExecStart=%h/src/home-assistant/.venv/bin/python %h/src/home-assistant/listener.py --pipe /tmp/homeassistant.pipe
+ExecStart=%h/src/home-assistant/.venv311/bin/python %h/src/home-assistant/listener.py --pipe /tmp/homeassistant.pipe
 Restart=on-failure
 RestartSec=5
 

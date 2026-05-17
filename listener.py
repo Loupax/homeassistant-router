@@ -2,25 +2,19 @@
 """
 Voice listener for Home Assistant Router.
 
-Dependencies (pip):
-    sounddevice
-    numpy
-    faster-whisper
-    torch torchaudio   (for silero-vad)
-    scipy
+Requires Python 3.11 venv (.venv311) — openWakeWord TFLite backend is
+not compatible with Python 3.14.
+
+Dependencies (.venv311):
+    pip install sounddevice numpy "numpy<2" faster-whisper torch torchaudio scipy openwakeword
 
 System packages (pacman):
-    portaudio          (already installed)
-    ffmpeg
+    portaudio ffmpeg
 
 Usage:
-    python listener.py [--device INDEX] [--pipe /tmp/homeassistant.pipe]
+    .venv311/bin/python listener.py [--device INDEX] [--pipe /tmp/homeassistant.pipe]
 
-Device index: run `python listener.py --list-devices` to see available inputs.
-
-# Install dependencies:
-#   pip install sounddevice numpy faster-whisper torch torchaudio scipy
-#   sudo pacman -S portaudio ffmpeg
+First run downloads openWakeWord models (~10MB) and the Whisper model (~250MB).
 """
 
 import argparse
@@ -34,39 +28,37 @@ import sounddevice as sd
 import torch
 from scipy.signal import resample_poly
 from faster_whisper import WhisperModel
+from openwakeword.model import Model as WakeModel
 
-SAMPLE_RATE = 16000        # Hz — required by all models
-CHUNK_MS    = 32           # ms per chunk — Silero VAD requires exactly 512 samples @ 16kHz
-CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 512 samples
+SAMPLE_RATE = 16000
+CHUNK_MS    = 80           # openWakeWord requires 80ms chunks (1280 samples @ 16kHz)
+CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 1280 samples
 
-MAX_WAKE_SECONDS    = 2    # max recording length for wake phrase detection
-MAX_COMMAND_SECONDS = 10   # max recording length for command
+MAX_COMMAND_SECONDS     = 10
+SILENCE_COMMAND_SECONDS = 1.0
 
-SILENCE_WAKE_SECONDS    = 1.0  # silence to end wake phrase recording
-SILENCE_COMMAND_SECONDS = 1.0  # silence to end command recording
-
-PIPE_PATH = "/tmp/homeassistant.pipe"
-WAKE_PHRASE = "hey jarvis"
-VAD_ONSET_THRESHOLD = 0.5
-MPV_SOCKET = "/tmp/ha-mpv.sock"
-DUCK_VOLUME = 5
+PIPE_PATH     = "/tmp/homeassistant.pipe"
+OWW_MODEL     = "hey_jarvis"
+OWW_THRESHOLD = 0.5
+MPV_SOCKET    = "/tmp/ha-mpv.sock"
+DUCK_VOLUME   = 5
 
 # ---------------------------------------------------------------------------
-# Model initialisation (module level — loaded once at startup)
+# Model initialisation (loaded once at startup)
 # ---------------------------------------------------------------------------
 
 vad_model, _ = torch.hub.load(
     'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
 )
 
-whisper_wake = WhisperModel(
+oww = WakeModel(wakeword_models=[OWW_MODEL], vad_threshold=0.5)
+
+whisper = WhisperModel(
     "Systran/faster-distil-whisper-small.en",
     device="cpu",
     compute_type="int8",
     cpu_threads=4,
 )
-whisper_cmd = whisper_wake  # same model; phase 1 audio is short so it's still fast
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -81,24 +73,26 @@ def resample_to_model(chunk, device_rate):
 
 
 def open_pipe_with_retry(path):
-    """Open the FIFO for writing, retrying until the reader (router) is up."""
     while True:
         try:
-            fd = open(path, 'w')
-            return fd
+            return open(path, 'w')
         except (FileNotFoundError, OSError) as e:
             print(f"Pipe not ready ({e}), retrying in 2s...")
             time.sleep(2)
 
 
 def vad_score(chunk_np):
-    """Return Silero VAD speech probability for a float32 16kHz chunk."""
-    tensor = torch.tensor(chunk_np)
-    return vad_model(tensor, SAMPLE_RATE).item()
+    """Run Silero VAD over two 512-sample sub-chunks from an 80ms chunk, return max."""
+    scores = []
+    for start in (0, 512):
+        sub = chunk_np[start:start + 512]
+        if len(sub) == 512:
+            scores.append(vad_model(torch.tensor(sub), SAMPLE_RATE).item())
+    return max(scores) if scores else 0.0
 
 
 def record_until_silence(stream, device_rate, silence_seconds, max_seconds, initial_chunk=None):
-    """Record audio chunks until Silero VAD detects sustained silence."""
+    """Record chunks until Silero VAD detects sustained silence."""
     buffer = [initial_chunk] if initial_chunk is not None else []
     silence_chunks = 0
     device_chunk  = int(device_rate * CHUNK_MS / 1000)
@@ -122,20 +116,8 @@ def record_until_silence(stream, device_rate, silence_seconds, max_seconds, init
 
 _COMMAND_PROMPT = "Hey Jarvis, play music, stop, louder, quieter, pause, resume, what's the weather."
 
-_WAKE_PROMPT = "Hey Jarvis."
-
-def transcribe_wake(audio_np):
-    """Fast wake-phrase detection with tiny.en, greedy decoding."""
-    segments, _ = whisper_wake.transcribe(
-        audio_np, language="en", beam_size=1, vad_filter=True,
-        initial_prompt=_WAKE_PROMPT,
-    )
-    return " ".join(s.text.strip() for s in segments).strip()
-
-
-def transcribe_command(audio_np):
-    """Accurate command transcription with small.en, greedy decoding."""
-    segments, _ = whisper_cmd.transcribe(
+def transcribe(audio_np):
+    segments, _ = whisper.transcribe(
         audio_np,
         language="en",
         beam_size=1,
@@ -146,16 +128,15 @@ def transcribe_command(audio_np):
 
 
 def strip_wake_phrase(text):
-    """Find wake phrase anywhere in text (case-insensitive). Returns everything after it, or None."""
+    """Strip wake word from transcript if present (user may speak command in one breath)."""
     lower = text.lower().strip()
-    idx = lower.find(WAKE_PHRASE)
-    if idx == -1:
-        return None
-    return text[idx + len(WAKE_PHRASE):].strip(" ,.")
+    idx = lower.find(OWW_MODEL.replace("_", " "))
+    if idx != -1:
+        return text[idx + len(OWW_MODEL):].strip(" ,.")
+    return text
 
 
 def _mpv_command(command):
-    """Send a JSON command to the mpv IPC socket; returns response data or None."""
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.settimeout(0.5)
@@ -168,7 +149,6 @@ def _mpv_command(command):
 
 
 def duck_volume():
-    """Lower mpv volume to DUCK_VOLUME%; return previous volume (or None)."""
     prev = _mpv_command(["get_property", "volume"])
     if prev is not None:
         _mpv_command(["set_property", "volume", DUCK_VOLUME])
@@ -176,7 +156,6 @@ def duck_volume():
 
 
 def unduck_volume(prev):
-    """Restore mpv volume to the value returned by duck_volume()."""
     if prev is not None:
         _mpv_command(["set_property", "volume", prev])
 
@@ -193,7 +172,6 @@ def status(msg):
 
 
 def write_to_pipe(pipe_fd, text, pipe_path):
-    """Write a line to the FIFO, reconnecting if the router has gone away."""
     try:
         pipe_fd.write(text + "\n")
         pipe_fd.flush()
@@ -208,29 +186,16 @@ def write_to_pipe(pipe_fd, text, pipe_path):
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Voice listener for Home Assistant Router"
-    )
-    parser.add_argument(
-        "--device",
-        type=int,
-        default=None,
-        help="sounddevice input device index (default: system default)",
-    )
-    parser.add_argument(
-        "--pipe",
-        default=PIPE_PATH,
-        help=f"FIFO path (default: {PIPE_PATH})",
-    )
-    parser.add_argument(
-        "--list-devices",
-        action="store_true",
-        help="print available input devices and exit",
-    )
+    parser = argparse.ArgumentParser(description="Voice listener for Home Assistant Router")
+    parser.add_argument("--device", type=int, default=None,
+                        help="sounddevice input device index (default: system default)")
+    parser.add_argument("--pipe", default=PIPE_PATH,
+                        help=f"FIFO path (default: {PIPE_PATH})")
+    parser.add_argument("--list-devices", action="store_true",
+                        help="print available input devices and exit")
     args = parser.parse_args()
 
     if args.list_devices:
-        print("Available input devices:")
         for i, dev in enumerate(sd.query_devices()):
             if dev['max_input_channels'] > 0:
                 print(f"  [{i}] {dev['name']}")
@@ -241,86 +206,58 @@ def main():
     device_info  = sd.query_devices(args.device, 'input')
     device_rate  = int(device_info['default_samplerate'])
     device_chunk = int(device_rate * CHUNK_MS / 1000)
-    print(f"Device sample rate: {device_rate}Hz (resampling to {SAMPLE_RATE}Hz)")
-    print(f"Wake phrase: \"{WAKE_PHRASE}\"")
+    print(f"Device: {device_rate}Hz → {SAMPLE_RATE}Hz  |  Wake word: \"{OWW_MODEL}\"")
 
     with sd.InputStream(
-        samplerate=device_rate,
-        channels=1,
-        dtype='int16',
-        blocksize=device_chunk,
-        device=args.device,
+        samplerate=device_rate, channels=1, dtype='int16',
+        blocksize=device_chunk, device=args.device,
     ) as stream:
-        print(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
+        status(f"{_GRAY}Listening for wake word... (Ctrl+C to quit){_RESET}")
         while True:
             chunk, _ = stream.read(device_chunk)
             chunk_np = resample_to_model(chunk, device_rate)
 
-            rms      = float(np.sqrt(np.mean(chunk_np ** 2)))
-            vol_bars = int(min(rms * 400, 30))
-            prob     = vad_score(chunk_np)
-            vad_bars = int(prob * 10)
+            scores    = oww.predict(chunk_np)
+            score     = scores.get(OWW_MODEL, 0.0)
+            rms       = float(np.sqrt(np.mean(chunk_np ** 2)))
+            vol_bars  = int(min(rms * 400, 30))
+            wake_bars = int(score * 10)
 
             print(
-                f"\r{_GRAY}🎙  [{'█' * vol_bars:<30}]  vad:{prob:.2f} [{'█' * vad_bars:<10}]{_RESET}",
+                f"\r{_GRAY}🎙  [{'█' * vol_bars:<30}]  wake:{score:.2f} [{'█' * wake_bars:<10}]{_RESET}",
                 end="", flush=True,
             )
 
-            if prob < VAD_ONSET_THRESHOLD:
+            if score < OWW_THRESHOLD:
                 continue
 
-            print()  # step off the VU meter line
-            # ---- Phase 1: detect wake phrase ----
-            t0 = time.monotonic()
-            status(f"{_YELLOW}⏺  Recording...{_RESET}")
-            wake_audio = record_until_silence(
-                stream, device_rate,
-                silence_seconds=SILENCE_WAKE_SECONDS,
-                max_seconds=MAX_WAKE_SECONDS,
-                initial_chunk=chunk_np,
-            )
-            t_rec = time.monotonic()
-            status(f"{_YELLOW}⏳  Transcribing...  (recorded {t_rec - t0:.1f}s){_RESET}")
-            wake_transcript = transcribe_wake(wake_audio)
-            t_tr = time.monotonic()
-            if not wake_transcript:
-                status(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
-                continue
+            oww.reset()
+            print()
 
-            inline_command = strip_wake_phrase(wake_transcript)
-            if inline_command is None:
-                status(f"{_GRAY}Ignored: {wake_transcript}  (transcribe {t_tr - t_rec:.1f}s){_RESET}")
-                status(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
-                continue
-
-            # ---- Phase 2: record command ----
             prev_vol = duck_volume()
             try:
-                if inline_command:
-                    command = inline_command
-                else:
-                    status(f"{_GREEN}✓  Wake phrase!  (transcribe {t_tr - t_rec:.1f}s)  Listening for command...{_RESET}")
-                    t1 = time.monotonic()
-                    cmd_audio = record_until_silence(
-                        stream, device_rate,
-                        silence_seconds=SILENCE_COMMAND_SECONDS,
-                        max_seconds=MAX_COMMAND_SECONDS,
-                    )
-                    t_rec2 = time.monotonic()
-                    status(f"{_YELLOW}⏳  Transcribing command...  (recorded {t_rec2 - t1:.1f}s){_RESET}")
-                    command = transcribe_command(cmd_audio)
-                    t_tr2 = time.monotonic()
-                    status(f"{_YELLOW}⏳  Done  (transcribe {t_tr2 - t_rec2:.1f}s){_RESET}")
+                status(f"{_GREEN}✓  Wake word!  Recording command...{_RESET}")
+                t0 = time.monotonic()
+                cmd_audio = record_until_silence(
+                    stream, device_rate,
+                    silence_seconds=SILENCE_COMMAND_SECONDS,
+                    max_seconds=MAX_COMMAND_SECONDS,
+                )
+                t_rec = time.monotonic()
+                status(f"{_YELLOW}⏳  Transcribing...  (recorded {t_rec - t0:.1f}s){_RESET}")
+                transcript = transcribe(cmd_audio)
+                t_tr = time.monotonic()
 
+                command = strip_wake_phrase(transcript)
                 if command:
-                    status(f"{_CYAN}▶  {command}{_RESET}")
+                    status(f"{_CYAN}▶  {command}  (transcribe {t_tr - t_rec:.1f}s){_RESET}")
                     pipe_fd = write_to_pipe(pipe_fd, command, args.pipe)
                 else:
-                    status(f"{_RED}✗  No command heard{_RESET}")
+                    status(f"{_RED}✗  No command heard  (transcribe {t_tr - t_rec:.1f}s){_RESET}")
             finally:
                 unduck_volume(prev_vol)
 
-            status(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
+            status(f"{_GRAY}Listening for wake word... (Ctrl+C to quit){_RESET}")
 
 
 if __name__ == "__main__":

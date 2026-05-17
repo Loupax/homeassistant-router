@@ -1,3 +1,4 @@
 .envrc
 homeassistant
 .venv/
+.venv311/
