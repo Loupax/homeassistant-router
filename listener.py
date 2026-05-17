@@ -51,7 +51,7 @@ vad_model, _ = torch.hub.load(
     'snakers4/silero-vad', 'silero_vad', force_reload=False, trust_repo=True
 )
 
-oww = WakeModel(wakeword_models=[OWW_MODEL], vad_threshold=0.5)
+oww = WakeModel(wakeword_models=[OWW_MODEL])
 
 whisper = WhisperModel(
     "Systran/faster-distil-whisper-small.en",
@@ -215,9 +215,10 @@ def main():
         status(f"{_GRAY}Listening for wake word... (Ctrl+C to quit){_RESET}")
         while True:
             chunk, _ = stream.read(device_chunk)
-            chunk_np = resample_to_model(chunk, device_rate)
+            chunk_np  = resample_to_model(chunk, device_rate)          # float32 for VAD/RMS
+            chunk_i16 = (chunk_np * 32767).clip(-32768, 32767).astype(np.int16)  # int16 for OWW
 
-            scores    = oww.predict(chunk_np)
+            scores    = oww.predict(chunk_i16)
             score     = scores.get(OWW_MODEL, 0.0)
             rms       = float(np.sqrt(np.mean(chunk_np ** 2)))
             vol_bars  = int(min(rms * 400, 30))
