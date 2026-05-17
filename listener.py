@@ -181,8 +181,7 @@ _RED    = "\033[31m"
 _RESET  = "\033[0m"
 
 def status(msg):
-    """Print a full-width status line, clearing the VU meter."""
-    print(f"\r\033[K{msg}", flush=True)
+    print(msg, flush=True)
 
 
 def write_to_pipe(pipe_fd, text, pipe_path):
@@ -262,6 +261,7 @@ def main():
             if prob < VAD_ONSET_THRESHOLD:
                 continue
 
+            print()  # step off the VU meter line
             # ---- Phase 1: detect wake phrase ----
             t0 = time.monotonic()
             status(f"{_YELLOW}⏺  Recording...{_RESET}")
