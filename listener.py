@@ -56,8 +56,9 @@ oww = WakeModel(wakeword_models=[OWW_MODEL])
 whisper = WhisperModel(
     "Systran/faster-distil-whisper-small.en",
     device="cpu",
-    compute_type="int8",
+    compute_type="float32",
     cpu_threads=4,
+    num_workers=2,
 )
 
 # ---------------------------------------------------------------------------
@@ -122,7 +123,7 @@ def transcribe(audio_np):
         language="en",
         beam_size=1,
         initial_prompt=_COMMAND_PROMPT,
-        vad_filter=True,
+        condition_on_previous_text=False,
     )
     return " ".join(s.text.strip() for s in segments).strip()
 
