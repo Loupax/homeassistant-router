@@ -173,21 +173,25 @@ def main():
         blocksize=device_chunk,
         device=args.device,
     ) as stream:
-        print("Listening for wake word...")
+        print("Listening for wake word... (Ctrl+C to quit)")
         while True:
             chunk, _ = stream.read(device_chunk)
             chunk_np = resample_to_model(chunk, device_rate)
 
+            rms = float(np.sqrt(np.mean(chunk_np ** 2)))
+            bars = int(min(rms * 400, 30))
+            print(f"\r🎙  [{'█' * bars:<30}] {'HEY JARVIS?' if bars > 5 else '':>11}", end="", flush=True)
+
             oww_model.predict(chunk_np)
             scores = oww_model.prediction_buffer.get(_OWW_MODEL_KEY, [])
             if scores and scores[-1] > 0.5:
-                print("Wake word detected! Recording...")
+                print("\nWake word detected! Recording...")
                 audio_buffer = record_until_silence(stream, device_rate)
                 transcript = transcribe(audio_buffer)
                 if transcript:
                     print(f"Transcribed: {transcript}")
                     pipe_fd = write_to_pipe(pipe_fd, transcript, args.pipe)
-                print("Listening for wake word...")
+                print("Listening for wake word... (Ctrl+C to quit)")
 
 
 if __name__ == "__main__":
