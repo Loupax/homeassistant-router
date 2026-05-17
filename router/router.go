@@ -73,9 +73,17 @@ func Route(appCtx *AppContext, line string) {
 
 	// Slow path — LLM classifier
 	classification, err := Classify(line, appCtx.LLMEndpoint, appCtx.APIKey, appCtx.Model)
-	if err == nil && classification.Intent != "discuss" {
-		dispatch(appCtx, classification.Intent, classification.Payload)
-		return
+	if err == nil {
+		switch classification.Intent {
+		case "unknown":
+			fmt.Println("I don't know how to do that yet.")
+			return
+		case "discuss":
+			// fall through to discussion
+		default:
+			dispatch(appCtx, classification.Intent, classification.Payload)
+			return
+		}
 	}
 
 	// Final fallback — discussion

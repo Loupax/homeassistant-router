@@ -26,10 +26,12 @@ Valid intents:
 - pause: user wants to pause. payload = ""
 - resume: user wants to resume. payload = ""
 - discuss: anything else, a question, statement, or conversation. payload = ""
+- unknown: the user is asking for something the assistant does not support (e.g. playlist control, alarms, timers). payload = ""
 
 Examples:
 {"intent":"play","payload":"jazz music"}
 {"intent":"stop","payload":""}
+{"intent":"unknown","payload":""}
 {"intent":"discuss","payload":""}`
 
 type classifierRequest struct {
