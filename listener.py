@@ -263,6 +263,7 @@ def main():
                 continue
 
             # ---- Phase 1: detect wake phrase ----
+            t0 = time.monotonic()
             status(f"{_YELLOW}⏺  Recording...{_RESET}")
             wake_audio = record_until_silence(
                 stream, device_rate,
@@ -270,15 +271,17 @@ def main():
                 max_seconds=MAX_WAKE_SECONDS,
                 initial_chunk=chunk_np,
             )
-            status(f"{_YELLOW}⏳  Transcribing...{_RESET}")
+            t_rec = time.monotonic()
+            status(f"{_YELLOW}⏳  Transcribing...  (recorded {t_rec - t0:.1f}s){_RESET}")
             wake_transcript = transcribe_wake(wake_audio)
+            t_tr = time.monotonic()
             if not wake_transcript:
                 status(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
                 continue
 
             inline_command = strip_wake_phrase(wake_transcript)
             if inline_command is None:
-                status(f"{_GRAY}Ignored: {wake_transcript}{_RESET}")
+                status(f"{_GRAY}Ignored: {wake_transcript}  (transcribe {t_tr - t_rec:.1f}s){_RESET}")
                 status(f"{_GRAY}Listening for \"{WAKE_PHRASE}\"... (Ctrl+C to quit){_RESET}")
                 continue
 
@@ -288,14 +291,18 @@ def main():
                 if inline_command:
                     command = inline_command
                 else:
-                    status(f"{_GREEN}✓  Wake phrase! Listening for command...{_RESET}")
+                    status(f"{_GREEN}✓  Wake phrase!  (transcribe {t_tr - t_rec:.1f}s)  Listening for command...{_RESET}")
+                    t1 = time.monotonic()
                     cmd_audio = record_until_silence(
                         stream, device_rate,
                         silence_seconds=SILENCE_COMMAND_SECONDS,
                         max_seconds=MAX_COMMAND_SECONDS,
                     )
-                    status(f"{_YELLOW}⏳  Transcribing command...{_RESET}")
+                    t_rec2 = time.monotonic()
+                    status(f"{_YELLOW}⏳  Transcribing command...  (recorded {t_rec2 - t1:.1f}s){_RESET}")
                     command = transcribe_command(cmd_audio)
+                    t_tr2 = time.monotonic()
+                    status(f"{_YELLOW}⏳  Done  (transcribe {t_tr2 - t_rec2:.1f}s){_RESET}")
 
                 if command:
                     status(f"{_CYAN}▶  {command}{_RESET}")
