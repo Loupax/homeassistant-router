@@ -34,8 +34,8 @@ from scipy.signal import resample_poly
 from faster_whisper import WhisperModel
 
 SAMPLE_RATE = 16000        # Hz — required by all models
-CHUNK_MS    = 96           # ms per chunk — balance between latency and VAD accuracy
-CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 1536 samples
+CHUNK_MS    = 32           # ms per chunk — Silero VAD requires exactly 512 samples @ 16kHz
+CHUNK_SIZE  = int(SAMPLE_RATE * CHUNK_MS / 1000)  # 512 samples
 
 MAX_RECORD_SECONDS = 10
 SILENCE_THRESHOLD_SECONDS = 1.5
