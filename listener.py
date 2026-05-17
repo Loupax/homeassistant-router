@@ -56,7 +56,7 @@ oww = WakeModel(wakeword_models=[OWW_MODEL])
 whisper = WhisperModel(
     "Systran/faster-distil-whisper-small.en",
     device="cpu",
-    compute_type="float32",
+    compute_type="int8",
     cpu_threads=4,
     num_workers=2,
 )
