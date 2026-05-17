@@ -1,0 +1,8 @@
+# Words or phrases Whisper should prefer when they're acoustically ambiguous.
+# One entry per line. Lines starting with # are ignored.
+# Re-read at each listener startup — no code changes needed.
+
+Greek
+Greek pop
+Iron Maiden
+Motorhead

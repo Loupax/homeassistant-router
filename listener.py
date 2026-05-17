@@ -19,6 +19,7 @@ First run downloads openWakeWord models (~10MB) and the Whisper model (~250MB).
 
 import argparse
 import json
+import os
 import socket
 import sys
 import time
@@ -116,14 +117,23 @@ def record_until_silence(stream, device_rate, silence_seconds, max_seconds, init
 
 
 _COMMAND_PROMPT = "Hey Jarvis, play music, stop, louder, quieter, pause, resume, what's the weather."
+_HOTWORDS_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hotwords.txt")
 
-def transcribe(audio_np):
+def load_hotwords():
+    try:
+        with open(_HOTWORDS_FILE) as f:
+            return [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    except FileNotFoundError:
+        return []
+
+def transcribe(audio_np, hotwords):
     segments, _ = whisper.transcribe(
         audio_np,
         language="en",
         beam_size=1,
         initial_prompt=_COMMAND_PROMPT,
         condition_on_previous_text=False,
+        hotwords=", ".join(hotwords) if hotwords else None,
     )
     return " ".join(s.text.strip() for s in segments).strip()
 
@@ -202,7 +212,10 @@ def main():
                 print(f"  [{i}] {dev['name']}")
         sys.exit(0)
 
-    pipe_fd = open_pipe_with_retry(args.pipe)
+    pipe_fd  = open_pipe_with_retry(args.pipe)
+    hotwords = load_hotwords()
+    if hotwords:
+        print(f"Hotwords: {', '.join(hotwords)}")
 
     device_info  = sd.query_devices(args.device, 'input')
     device_rate  = int(device_info['default_samplerate'])
@@ -247,7 +260,7 @@ def main():
                 )
                 t_rec = time.monotonic()
                 status(f"{_YELLOW}⏳  Transcribing...  (recorded {t_rec - t0:.1f}s){_RESET}")
-                transcript = transcribe(cmd_audio)
+                transcript = transcribe(cmd_audio, hotwords)
                 t_tr = time.monotonic()
 
                 command = strip_wake_phrase(transcript)
