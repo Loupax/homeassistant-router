@@ -1,5 +1,5 @@
 BINARY     := homeassistant
-INSTALL_DIR := $(HOME)/bin
+INSTALL_DIR := $(HOME)/.local/bin
 SERVICE_DIR := $(HOME)/.config/systemd/user
 
 .PHONY: build install test clean \
