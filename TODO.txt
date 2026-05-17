@@ -75,6 +75,26 @@ through Whisper transcription.
       each command ~20 times, and adjust thresholds in the config to balance false
       positive rate vs. latency.
 
+### Feature: Wake word cancels in-flight pipeline (stutter recovery)
+
+Goal: If the wake word is detected again while the listener is still in the
+recording or transcribing phase, abort the current pipeline immediately and
+restart from the recording step — no waiting for Whisper to finish.
+
+- [ ] Move recording + transcription into a background thread so the wake-word
+      detection loop keeps running on the main thread during those phases.
+
+- [ ] Set a threading.Event (e.g. cancel_event) that the background thread checks
+      at the start of each chunk read and before calling transcribe(). If set,
+      raise an exception or return early to abandon the current command.
+
+- [ ] In the main wake-word loop, if a new wake-word score exceeds the threshold
+      while a background command is in flight, set cancel_event and wait for the
+      thread to exit before starting a new recording pass.
+
+- [ ] Ensure volume un-duck (unduck_volume) is always called on cancellation,
+      same as in the existing finally block.
+
 ### Feature: Playlist support for media playback
 
 Goal: Allow voice commands to build, persist, and navigate playlists. Playlists
