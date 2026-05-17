@@ -117,7 +117,7 @@ def record_until_silence(stream, device_rate, silence_seconds, max_seconds, init
 
 
 _COMMAND_PROMPT = "Hey Jarvis, play music, stop, louder, quieter, pause, resume, what's the weather."
-_HOTWORDS_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hotwords.txt")
+_HOTWORDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hotwords.txt")
 
 def load_hotwords():
     try:

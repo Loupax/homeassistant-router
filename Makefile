@@ -51,7 +51,7 @@ logs-listener:
 	journalctl --user -f -u homeassistant-listener
 
 update-hotwords:
-	python3 update_hotwords.py
+	./update_hotwords
 
 install-hotwords-timer:
 	mkdir -p $(SERVICE_DIR)
