@@ -1,0 +1,57 @@
+# TODO — Home Assistant Voice Control
+Last updated: 2026-05-17
+
+## In Progress
+
+## Backlog
+
+### Feature: Custom openWakeWord models for direct command dispatch
+
+Goal: Train dedicated wake word models for fixed commands (stop, pause, volume
+up/down, louder/quieter) so they are handled instantly without routing audio
+through Whisper transcription.
+
+- [ ] Create train/ directory structure with a README documenting the training
+      pipeline and per-phrase configuration (phrase text, TTS variants, threshold)
+
+- [ ] Write train/generate_samples.py — generate ~1000 positive TTS audio samples
+      per phrase using gTTS with varied speed/pitch; target phrases:
+        "stop", "stop music", "pause", "resume",
+        "louder", "volume up", "quieter", "volume down"
+      Output raw .wav files into train/samples/<phrase>/ directories.
+      Note: mix in a small set (50-100) of real recorded samples per phrase to
+      account for Greek accent; record these manually and place in
+      train/samples/<phrase>/real/.
+
+- [ ] Write train/compute_embeddings.py — run openWakeWord's pre-trained feature
+      extractor over all positive samples and the existing negative sample library
+      (from the openWakeWord repo); save embeddings as .npy files alongside labels.
+
+- [ ] Write train/train_model.py — train a small sklearn LogisticRegression
+      classifier per phrase on the computed embeddings; evaluate with a held-out
+      split; export each trained model to .tflite using openWakeWord's export
+      utilities. Target output: train/models/<phrase>.tflite (~500KB each).
+      Reference: https://github.com/dscripka/openWakeWord/blob/main/docs/custom_model_training.md
+
+- [ ] Deploy trained .tflite files — copy finished models to the directory where
+      hey_jarvis.tflite lives so listener.py can find them by a consistent path
+      convention.
+
+- [ ] Update listener.py — load all custom command models in parallel alongside
+      hey_jarvis at startup; on each 80ms chunk, check per-model scores against
+      per-model thresholds; if a command model score exceeds its threshold, write
+      the command token directly to the pipe (bypassing Whisper entirely).
+      Add a config dict or small config file mapping model filename → command
+      token → threshold so tuning doesn't require code changes.
+
+- [ ] Handle "play" prefix edge case — decide whether "play" gets a wake-word
+      model that suppresses the hey_jarvis flow and hands off to Whisper for the
+      remainder of the utterance, or whether it stays as a normal Whisper command.
+      Document the decision in train/README.
+
+- [ ] Tune thresholds on real speech — after initial deployment, run the listener
+      in a logging mode that records per-model scores without dispatching, speak
+      each command ~20 times, and adjust thresholds in the config to balance false
+      positive rate vs. latency.
+
+## Completed
