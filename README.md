@@ -55,6 +55,22 @@ Natural language is also supported for media commands (e.g. "put on some jazz", 
 
 Requires the Python listener service (Python 3.11 venv — openWakeWord is not compatible with Python 3.14+).
 
+### Install Python 3.11 via pyenv
+
+```bash
+# Install pyenv
+curl https://pyenv.run | bash
+
+# Add to shell (bash — adjust for zsh: ~/.zshrc)
+echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
+echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
+echo 'eval "$(pyenv init -)"' >> ~/.bashrc
+source ~/.bashrc
+
+# Install Python 3.11
+pyenv install 3.11
+```
+
 ### One-time setup
 
 ```bash
