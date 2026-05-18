@@ -1,0 +1,259 @@
+# Words or phrases Whisper should prefer when they're acoustically ambiguous.
+# One entry per line. Lines starting with # are ignored.
+# Re-read at each listener startup — no code changes needed.
+
+Phonk
+Greek
+Greek pop
+Iron Maiden
+Motorhead
+
+# --- auto: chart hotwords — updated 2026-05-17 ---
+ABBA
+AIDAN
+APON
+Afterlife
+Aigaio
+Akylas
+Alex Warren
+Alexandra Căpitănescu
+Alexia
+Alis
+Alleluia
+American Girls
+Amr Diab
+Andrew Lloyd Webber & Sam Ryder
+Andromeda
+Angel Above Me (Run Run River)
+Angels Above Me
+Animera Tou Erota
+Anna Vissi
+Another Day Old
+Antigoni
+Antzy Samiou
+Aspirini
+Babe I'm Gonna Leave You
+Bangaranga
+Bangaranga (Eurovision 2026 - Bulgaria / Karaoke)
+Bangaranga (Eurovision)
+Be By You
+Be Her
+Beat It
+Beauty and a Beat (feat. Nicki Minaj)
+Bebe Rexha & Faithless
+Bella
+Billie Jean
+Billy Joel
+Black Lilies
+Black Sabbath
+Blondie
+Boston
+Breaking Benjamin
+Bruno Mars
+COSMÓ
+CROSSROADS
+Call Me (Theme from "American Gigolo")
+Cameron Whitcomb
+Celebrate Me
+Charles Wesley Godwin
+Choke Me
+Choosin' Texas
+Christopher Cross
+Cody Johnson & Brothers Osborne
+DARA
+Dai Dai
+Dancing Queen
+Dancing on the ice
+Dandelion
+Daniel Žižka
+Danny Bones
+Dara
+Days We Left Behind
+Delta Goodrem
+Dermot Kennedy
+Disco DJ
+Don't Stop 'Til You Get Enough
+Driver's Seat
+Eclipse
+Eclipse (Eurovision 2026 - Australia / Karaoke)
+Eddie Dalton
+Edge of the Earth
+Ein Kuss in Paris
+Eins, Zwei, Drei
+Ela Mia Nychta
+Eleni Foureira & ARCADE
+Ella Langley
+Ella Langley & Morgan Wallen
+Ella Langley & Riley Green
+Enter Sandman
+Epithesi
+Essyla
+Eure Meinung
+Evanescence
+Evanthia Reboutsika
+Experience
+Eye of the Storm
+FELICIA
+FEVER DREAM
+Ferto
+Fevgo
+Fire (Eurovision Song Contest)
+Five Finger Death Punch
+Fool Proof
+Funeral
+Før Vi Går Hjem
+GT
+Gefallene Walküren
+Gethsemane
+Giannis Parios & Harry Varthakouris
+Go (Radio Edit)
+God's Kingdom
+Golden
+Goodbye Kiss
+Gracie Abrams
+HUNTR/X, EJAE, AUDREY NUNA, REI AMI & KPop Demon Hunters Cast
+Haris Alexiou
+Harry Styles
+Hit the Wall
+Human Nature
+I Can't Love You Anymore
+I Feel So Free (Peggy Gou Energy Mix)
+I Just Might
+I Virtuosi Italiani & Daniel Hope
+In The Stars
+IngaRose
+Ioulia Kallimani & Michael Touratzidis
+Iron Maiden
+JALLA
+JONAS LOVV
+Jananto
+Josh Fawaz
+Justin Bieber
+KSK Mix House
+Kantada
+Kasabian
+Keith Urban
+Kingdom of Fear
+Komet
+Konstantinos Christoforou & One
+LEA
+LELEK
+LET ME BE
+LOOK MUM NO COMPUTER
+LUCA SKETTI
+Led Zeppelin
+Lemony Licht in mir
+Leony & Marcus & Martinus
+Liekinheitin
+Like a Prayer
+Linda Lampenius & Pete Parkkonen
+Locked Out of Heaven
+Lose Control
+Loving Life Again
+Luke Combs
+MOVING TO THE SUN
+Madonna & Peggy Gou
+Maite Kelly
+Man I Need
+Man In the Mirror
+Mantle Music The Company of Prophets & Joshua Giles
+Marc Eggers, Aditotoro & Paul Frege
+Martin Garrix & Ed Sheeran
+Me Xodepses
+Menowin
+Merci Chérie (Eine Hommage an Udo Jürgens)
+Mercy on Me (aus "Deutschland sucht den Superstar 2026")
+Metallica
+Michael Jackson
+Michel Fugain & Le Big Bazar
+Michelle
+Midnight Sun
+Mimis Papaioannou
+Mon Amour
+Mon Amour (So lang ich noch Luft in meiner Lunge hab) [Party Version]
+Mon amour
+Monroe
+Moonlight
+My System
+My System (Eurovision 2026 - Sweden / Karaoke)
+Nami Kaze
+New Religion
+Nikos Makropoulos
+Noam Bettan & כאן - תאגיד השידור הישראלי
+Nothing Else Matters
+Nân
+Olivia Dean
+Olivia Rodrigo
+One (Remastered)
+Ordinary
+Papaoutai (Afro Soul)
+Paranoid (2012 - Remaster)
+Parov Stelar
+Paul McCartney
+Per sempre sì
+Per sempre sì (Eurovision 2026 - Italy / Karaoke)
+RAYE
+REGARDE !
+Ragal Ironbull
+Repeat It
+Ride Like the Wind (2019 Remaster)
+Risk It All
+Run Like Home
+STELLA LEFTY
+Sal da Vinci
+Sandre
+Sarah Engels
+Satoshi
+Saxboy Billy
+Shakira & Burna Boy
+Sign of the Times
+Slimane
+Smooth Criminal
+Sniff 'n' the Tears
+So Easy (To Fall In Love)
+Something Wicked
+Somewhere Along The Way
+Steal Away
+Stick Figure
+Stick Figure & Die WBL
+Stick Figure & MBD
+Summer Breeze
+Søren Torpegaard Lund
+TANZSCHEIN
+TANZSCHEIN (Eurovision 2026 - Austria / Karaoke)
+Tamly Maak
+Taylor Swift
+Teddy Swims
+The Beaches
+The Chemical Brothers
+The Fate of Ophelia
+The Puerto Rico Song
+The Railway Station
+The Rolling Stones
+The Second Voice
+The Trooper
+The UTK Collective
+The Unforgiven
+This is England
+Thriller
+Ti Vedo
+Tobee
+Turn the Page
+Udo Lindenberg & Apache 207
+Une belle histoire
+VALHALLA CALLING
+Vienna
+Viva, Moldova!
+WHERE IS MY HUSBAND!
+War In The Spirit (feat. Ricka Riley) [Live at Mantle]
+Who Will You Follow
+Willing and Able
+Ya Ya Ya
+Zara Larsson
+Zeina
+drop dead
+mikeeysmind, Chill77 & Unjaps
+you look like you love me
+Ο Ύμνος της Α.Ε.Κ. (feat. Christos Nikolopoulos)
+נועם בתן & כאן - תאגיד השידור הישראלי
+# --- end auto ---

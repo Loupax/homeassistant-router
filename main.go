@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"homeassistant/config"
 	"homeassistant/discussion"
@@ -14,9 +15,13 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 func main() {
+	pipePath := flag.String("input-pipe", "", "path to a named pipe (FIFO) to read commands from")
+	flag.Parse()
+
 	missingDeps := false
 	for _, bin := range []string{"mpv", "yt-dlp"} {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -85,14 +90,22 @@ func main() {
 		Model:        model,
 	}
 
+	lineCh := make(chan string, 16)
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		select {
 		case <-sigCh:
+			if *pipePath != "" {
+				os.Remove(*pipePath)
+			}
 			close(appCtx.ShutdownChan)
 		case <-appCtx.ShutdownChan:
+			if *pipePath != "" {
+				os.Remove(*pipePath)
+			}
 		}
 	}()
 
@@ -103,22 +116,68 @@ func main() {
 		os.Exit(0)
 	}()
 
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				appCtx.Media.KillActive()
-				_ = appCtx.Discussion.Persist()
-				os.Exit(0)
+	if *pipePath != "" {
+		// Create the FIFO if it doesn't already exist.
+		err := syscall.Mkfifo(*pipePath, 0600)
+		if err != nil && err != syscall.EEXIST {
+			fmt.Fprintf(os.Stderr, "FATAL: could not create FIFO %s: %v\n", *pipePath, err)
+			os.Exit(1)
+		}
+
+		go func() {
+			for {
+				f, err := os.OpenFile(*pipePath, os.O_RDONLY, os.ModeNamedPipe)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "pipe: open error: %v\n", err)
+					time.Sleep(1 * time.Second)
+					continue
+				}
+				reader := bufio.NewReader(f)
+				for {
+					line, err := reader.ReadString('\n')
+					if err == io.EOF {
+						f.Close()
+						break
+					}
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "pipe: read error: %v\n", err)
+						f.Close()
+						break
+					}
+					trimmed := strings.TrimSpace(line)
+					if trimmed != "" {
+						lineCh <- trimmed
+					}
+				}
 			}
-			fmt.Fprintf(os.Stderr, "Read error: %v\n", err)
-			continue
+		}()
+	} else {
+		go func() {
+			reader := bufio.NewReader(os.Stdin)
+			for {
+				line, err := reader.ReadString('\n')
+				if err == io.EOF {
+					close(appCtx.ShutdownChan)
+					return
+				}
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Read error: %v\n", err)
+					continue
+				}
+				trimmed := strings.TrimSpace(line)
+				if trimmed != "" {
+					lineCh <- trimmed
+				}
+			}
+		}()
+	}
+
+	for {
+		select {
+		case <-appCtx.ShutdownChan:
+			return
+		case line := <-lineCh:
+			router.Route(appCtx, line)
 		}
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		router.Route(appCtx, line)
 	}
 }

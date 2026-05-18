@@ -1,0 +1,138 @@
+# TODO — Home Assistant Voice Control
+Last updated: 2026-05-17
+
+## In Progress
+
+## Backlog
+
+### Spike: Evaluate Deepgram API as replacement for local Whisper transcription
+
+Context: local Whisper (small.en, CPU) takes ~4s per command on a 2018 Ryzen 5
+mobile APU. Deepgram Nova-2 costs ~$0.0043/min (~$0.50/month estimated for
+personal use) and advertises ~300ms latency. Privacy trade-off: voice commands
+leave the local machine and pass through Deepgram servers.
+
+- [ ] Create a throwaway branch and swap the Whisper transcribe() call for a
+      Deepgram REST API call (nova-2 model, pre-recorded audio endpoint); keep
+      the existing interface so nothing else in the pipeline changes.
+
+- [ ] Benchmark end-to-end latency over 20+ real commands; record p50/p95 in a
+      short note alongside the branch.
+
+- [ ] Assess transcription accuracy against the local Whisper baseline on the
+      same command set, noting any mis-recognitions with the Greek accent.
+
+- [ ] Write up a brief trade-off summary (latency, cost, accuracy, privacy) and
+      decide: adopt Deepgram, stay on local Whisper, or explore a hybrid
+      (Deepgram for speed-sensitive commands, Whisper for sensitive ones).
+
+### Feature: Custom openWakeWord models for direct command dispatch
+
+Goal: Train dedicated wake word models for fixed commands (stop, pause, volume
+up/down, louder/quieter) so they are handled instantly without routing audio
+through Whisper transcription.
+
+- [ ] Create train/ directory structure with a README documenting the training
+      pipeline and per-phrase configuration (phrase text, TTS variants, threshold)
+
+- [ ] Write train/generate_samples.py — generate ~1000 positive TTS audio samples
+      per phrase using gTTS with varied speed/pitch; target phrases:
+        "stop", "stop music", "pause", "resume",
+        "louder", "volume up", "quieter", "volume down"
+      Output raw .wav files into train/samples/<phrase>/ directories.
+      Note: mix in a small set (50-100) of real recorded samples per phrase to
+      account for Greek accent; record these manually and place in
+      train/samples/<phrase>/real/.
+
+- [ ] Write train/compute_embeddings.py — run openWakeWord's pre-trained feature
+      extractor over all positive samples and the existing negative sample library
+      (from the openWakeWord repo); save embeddings as .npy files alongside labels.
+
+- [ ] Write train/train_model.py — train a small sklearn LogisticRegression
+      classifier per phrase on the computed embeddings; evaluate with a held-out
+      split; export each trained model to .tflite using openWakeWord's export
+      utilities. Target output: train/models/<phrase>.tflite (~500KB each).
+      Reference: https://github.com/dscripka/openWakeWord/blob/main/docs/custom_model_training.md
+
+- [ ] Deploy trained .tflite files — copy finished models to the directory where
+      hey_jarvis.tflite lives so listener.py can find them by a consistent path
+      convention.
+
+- [ ] Update listener.py — load all custom command models in parallel alongside
+      hey_jarvis at startup; on each 80ms chunk, check per-model scores against
+      per-model thresholds; if a command model score exceeds its threshold, write
+      the command token directly to the pipe (bypassing Whisper entirely).
+      Add a config dict or small config file mapping model filename → command
+      token → threshold so tuning doesn't require code changes.
+
+- [ ] Handle "play" prefix edge case — decide whether "play" gets a wake-word
+      model that suppresses the hey_jarvis flow and hands off to Whisper for the
+      remainder of the utterance, or whether it stays as a normal Whisper command.
+      Document the decision in train/README.
+
+- [ ] Tune thresholds on real speech — after initial deployment, run the listener
+      in a logging mode that records per-model scores without dispatching, speak
+      each command ~20 times, and adjust thresholds in the config to balance false
+      positive rate vs. latency.
+
+### Feature: Wake word cancels in-flight pipeline (stutter recovery)
+
+Goal: If the wake word is detected again while the listener is still in the
+recording or transcribing phase, abort the current pipeline immediately and
+restart from the recording step — no waiting for Whisper to finish.
+
+- [ ] Move recording + transcription into a background thread so the wake-word
+      detection loop keeps running on the main thread during those phases.
+
+- [ ] Set a threading.Event (e.g. cancel_event) that the background thread checks
+      at the start of each chunk read and before calling transcribe(). If set,
+      raise an exception or return early to abandon the current command.
+
+- [ ] In the main wake-word loop, if a new wake-word score exceeds the threshold
+      while a background command is in flight, set cancel_event and wait for the
+      thread to exit before starting a new recording pass.
+
+- [ ] Ensure volume un-duck (unduck_volume) is always called on cancellation,
+      same as in the existing finally block.
+
+### Feature: Playlist support for media playback
+
+Goal: Allow voice commands to build, persist, and navigate playlists. Playlists
+are stored as JSON files in ~/.config/homeassistant/playlists/. mpv is driven
+via its existing Unix socket IPC at /tmp/ha-mpv.sock using the loadlist,
+playlist-next, and playlist-prev commands; yt-dlp resolves track queries to URLs
+before they are written into the playlist file.
+
+- [ ] Define playlist data model — create media/playlist.go with a Playlist
+      struct (Name, Tracks []Track where Track has Title and URL); add Load/Save
+      helpers that read/write JSON to ~/.config/homeassistant/playlists/<name>.json,
+      creating the directory if absent.
+
+- [ ] Implement playlist mutation commands — add AddTrack(query string) and
+      ClearPlaylist() to the media package; AddTrack resolves the query through
+      yt-dlp (reuse existing resolver), appends the resulting URL+title to the
+      named playlist file, and also issues an mpv loadfile ... append IPC call
+      so a live session picks up the new track without restart.
+
+- [ ] Implement PlayPlaylist command — add a PlayPlaylist(name string) function
+      that loads the named JSON file and calls mpv's loadlist IPC command with
+      the path to a temp M3U written from the playlist, then starts playback.
+      Default to a playlist named "default" when no name is given.
+
+- [ ] Implement navigation commands — add Next() and Previous() functions that
+      send playlist-next and playlist-prev over the mpv IPC socket; wire these
+      into the router alongside the existing stop/pause/resume handlers.
+
+- [ ] Implement ShowPlaylist command — add ShowPlaylist(name string) that reads
+      the JSON file and returns a formatted string listing track titles with their
+      position index; the router prints this to stdout (same pattern as other
+      informational commands).
+
+- [ ] Add intent patterns to router — extend router/ with new intent cases for:
+        "add to playlist", "queue this", "queue [query]"  → AddTrack
+        "play playlist [name]"                            → PlayPlaylist
+        "next" / "skip"                                   → Next
+        "previous" / "go back"                            → Previous
+        "show playlist" / "what's in the queue"           → ShowPlaylist
+
+## Completed
